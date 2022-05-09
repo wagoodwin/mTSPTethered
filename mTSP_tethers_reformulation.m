@@ -8,11 +8,16 @@
 % 3. Change the objective function
 
 
-%% Setup and Easy Constraints
-
 clc; 
 clear all;
 yalmip('clear');
+
+
+flagNorm = "two-squared"; % options: "one" or "two-squared"
+flagTether = "tethered"; % options: "tethered" or "untethered"
+
+
+%% Setup and Easy Constraints
 
 numOfTimeSteps = 8; % corresponds to i
 numOfCities = 10; % corresponds to j
@@ -30,8 +35,17 @@ C = zeros(numOfCities);
 
 for i = 1:numOfCities
     for j = 1:numOfCities   
-        C(i,j) = distance(nodecoords(i,2), nodecoords(i,3), ...
-           nodecoords(j,2), nodecoords(j,3));
+        
+        if( (strcmp(flagNorm,"one") == 1) )
+            C(i,j) = distance1(nodecoords(i,2), nodecoords(i,3), ...
+            nodecoords(j,2), nodecoords(j,3));
+        end
+        
+        if ( (strcmp(flagNorm,"two-squared") == 1) )
+             C(i,j) = distance(nodecoords(i,2), nodecoords(i,3), ...
+             nodecoords(j,2), nodecoords(j,3));
+        end
+        
     end
 end
   
@@ -120,25 +134,11 @@ end
 % tetherConstraints = 
 %  
 
-%% Objective Function: Entry Selection Method (Abolish)
-
-% Objective Function
-totalDistance = 0;
-for k = 1:numOfRobots
-    for i = numOfCities - 1
-            totalDistance = totalDistance +  x(i+1,:,k)*C*x(i,:,k)';
-    end
-end
-objective = totalDistance;
-
-
 %% Objective Function and Tether Constraint: p-norm method
 
 % We'll now implement the tether constraint. We'll use the taxicabDistances
 % matrix to enforce that the distance between the robots at every point 
 % in time should be less than a set tether length.
-
-
 
 
 tetherConstraints = [];
@@ -147,47 +147,35 @@ for i = 1:numOfTimeSteps
     
 %     robotDistances12 = [];
     tetherConstraint = zeros(1,2);
-%     robotLocation=zeros(numOfRobots,2);
-%     for k = 1:numOfRobots
-% %         for j = 1:numOfCities
-%             robotLocation(i,:,k) = sum([x(i,:,k)' x(i,:,k)'].*nodecoords(:,(2:3)),1);%x(i,j,k)*nodecoords(j,(2:3));
-%             
-% %             % Enforce tether constraint between robots 1 and 2:
-% %             robotDistances12 = x(i,j,1)*nodecoords(j,(2:3)) - ...
-% %                 x(i,j,2)*nodecoords(j,(2:3));
-% %             
-% %             % Enforce tether constraint between robots 1 and 3:
-% %             robotDistances13 = x(i,j,1)*nodecoords(j,(2:3)) - ...
-% %                 x(i,j,3)*nodecoords(j,(2:3));
-%             
-% %         end
-%     end
 
     % At each time step, 
     robotLocation1(i,:) = sum([x(i,:,1)' x(i,:,1)'].*nodecoords(:,(2:3)),1);
     robotLocation2(i,:) = sum([x(i,:,2)' x(i,:,2)'].*nodecoords(:,(2:3)),1);
     robotLocation3(i,:) = sum([x(i,:,3)' x(i,:,3)'].*nodecoords(:,(2:3)),1);%x(i,j,k)*nodecoords(j,(2:3));
 
-    % 1-norm
-    robotDistances12 = sum(abs(robotLocation1(i,:)-robotLocation2(i,:)));
-    robotDistances13 = sum(abs(robotLocation1(i,:)-robotLocation3(i,:)));
-    tetherConstraints = [tetherConstraints; ...
-                             (robotDistances12 <= tetherLength); ...
-                             (robotDistances13 <= tetherLength)];
-    % 2-norm
-%     robotDistances12 = sum((robotLocation1(i,:)-robotLocation2(i,:)).^2);
-%     robotDistances13 = sum((robotLocation1(i,:)-robotLocation3(i,:)).^2);
-%     tetherConstraints = [tetherConstraints; ...
-%                              (robotDistances12 <= tetherLength^2); ...
-%                              (robotDistances13 <= tetherLength^2)];
+    
+    % 1-norm implementation
+    if (strcmp(flagNorm,"one") == 1) 
+        
+        robotDistances12 = sum(abs(robotLocation1(i,:)-robotLocation2(i,:)));
+        robotDistances13 = sum(abs(robotLocation1(i,:)-robotLocation3(i,:)));
+        tetherConstraints = [tetherConstraints; ...
+                                 (robotDistances12 <= tetherLength); ...
+                                 (robotDistances13 <= tetherLength)];                  
+    end
+    
+    
+    % Squared 2-norm implementation (sum of squared distances)  
+    if (strcmp(flagNorm,"two-squared") == 1)
+
+        robotDistances12 = sum((robotLocation1(i,:)-robotLocation2(i,:)).^2);
+        robotDistances13 = sum((robotLocation1(i,:)-robotLocation3(i,:)).^2);
+        tetherConstraints = [tetherConstraints; ...
+                                 (robotDistances12 <= tetherLength^2); ...
+                                 (robotDistances13 <= tetherLength^2)];
+
+    end
                          
-                         
-    % Actual 2-norm (including square root)
-%     robotDistances12 = sqrtm(sum((robotLocation1(i,:)-robotLocation2(i,:)).^2));
-%     robotDistances13 = sqrtm(sum((robotLocation1(i,:)-robotLocation3(i,:)).^2));
-%     tetherConstraints = [tetherConstraints; ...
-%                              (robotDistances12 <= tetherLength); ...
-%                              (robotDistances13 <= tetherLength)];
            
 end
 
@@ -209,8 +197,6 @@ end
 % the distances.
 
 
-
-
 % This loop makes a matrix of distances between the robots at each timestep.
 % The matrix has numOfTimeStep-1 rows and 2 columns. The first column
 % holds the x distance at a step and the second column holds the y distance
@@ -225,93 +211,43 @@ end
 % by the robots in their route.
 
 
-    % Initialize D (taxicabDistances) matrix
-    taxicabDistances = []; 
+
+% Idea here: to enforce tether and objective function constraints, we need
+% the robots' distances at each point in time. 
+
+% Initialize D (taxicabDistances) matrix
+taxicabDistances = []; 
      
 
 distRobot1=0;
 distRobot2=0;
 distRobot3=0;
+
 % for k = 1:numOfRobots
     
     for i = 1:numOfTimeSteps-1
 
-% 2-norm
-%         distRobot1=distRobot1+(sum((robotLocation1(i,:)-robotLocation1(i+1,:)).^2));
-%         distRobot2=distRobot2+(sum((robotLocation2(i,:)-robotLocation2(i+1,:)).^2));
-%         distRobot3=distRobot3+(sum((robotLocation3(i,:)-robotLocation3(i+1,:)).^2));
+    % 1-norm implementation
+    if (strcmp(flagNorm,"one") == 1) 
 
-% 2-norm actual (square root)
-%         distRobot1=distRobot1+sqrtm((sum((robotLocation1(i,:)-robotLocation1(i+1,:)).^2)));
-%         distRobot2=distRobot2+sqrtm((sum((robotLocation2(i,:)-robotLocation2(i+1,:)).^2)));
-%         distRobot3=distRobot3+sqrtm((sum((robotLocation3(i,:)-robotLocation3(i+1,:)).^2)));
-        
-% 1-norm
         distRobot1=distRobot1+(sum(abs(robotLocation1(i,:)-robotLocation1(i+1,:))));
         distRobot2=distRobot2+(sum(abs(robotLocation2(i,:)-robotLocation2(i+1,:))));
         distRobot3=distRobot3+(sum(abs(robotLocation3(i,:)-robotLocation3(i+1,:))));
         
-        % To get 2-norm: 
-        % distRobot1=distRobot1+(sum((robotLocation1(i,:)-robotLocation1(i+1,:)).^2));
+    end
+    
+    % Squared 2-norm implementation (sum of squared distances) 
+    if (strcmp(flagNorm,"two-squared") == 1)
+
+        distRobot1=distRobot1+(sum((robotLocation1(i,:)-robotLocation1(i+1,:)).^2));
+        distRobot2=distRobot2+(sum((robotLocation2(i,:)-robotLocation2(i+1,:)).^2));
+        distRobot3=distRobot3+(sum((robotLocation3(i,:)-robotLocation3(i+1,:)).^2));
+         
+    end
         
-        % (re)set dCoord variable
-%         dCoord = zeros(1,2);
-        % distance coordinate calculation at a single time step:
-%         for j = 1:numOfCities
-%             dCoord = dCoord + (x(i,j,k)*nodecoords(j,2:3)) - ... 
-%                 (x(i+1,j,k)*nodecoords(j,2:3));
-%         end
-        %taxicabDistances(i,,k) = dCoord;  % assign dCoord vector to ith entry 
-        
-%         taxicabDistances = [taxicabDistances; dCoord(1) dCoord(2)];
-        % when we assign, we get a NaN. instead of sdpvar for
-        % taxicabDistances. Gotta assign one at a time
 
     end
     
-% end
-
-
-
-
-
-% create a bound object to be minimzed. It's a 3-dimensional array, with
-% one dimension per robot.
-% Each dimension has a (numOfTimeSteps-1)x(2) matrix. The first column 
-% bounds the x distances of taxicanDistances from above and below, while
-% the second column bounds the y distances.
-
-% bound = sdpvar(length(taxicabDistances(:,1)),2);
-% 
-% objConstraints = [];
-%     for j = 1:2 % go through the x and then the y distances
-%         objConstraints = [objConstraints,  ...
-%             (-bound(:,j) <= taxicabDistances(:,j) <= bound(:,j))];
-%     end
-
-% objConstraints = [];
-% for i = 1:numOfRobots*2
-%     objConstraints = [objConstraints,  ...
-%         (-bound(:,i) <= taxicabDistances(:,i) <= bound(:,i))];
-% end
-
-% odd columns have robot x coords; even columns have robot y coords
-
-% 
-% constraint1 = [-bound(:,1) <= taxicabDistances(:,1) <= bound(:,1)];
-% constraint2 = [-bound(:,2) <= taxicabDistances(:,2) <= bound(:,2)];
-% constraint2 = [-bound(:,3) <= taxicabDistances(:,3) <= bound(:,3)];
-% 
-% 
-% constraint1 = [-bound1 <= taxicabDistances(:,1) <= bound1];
-% constraint2 = [-bound2 <= taxicabDistances(:,2) <= bound2];
-% 
-% robotOneBound = sdpvar(length(taxicabDistances(:,1)),2);
-% objConstraint = [-robotOneBound(:,1) <= taxicabDistances(:,1) <= robotOneBound(:,1)];
-
-
-
-% bound has three dimensions, so we need three sum() commands
 objective = distRobot1+distRobot2+distRobot3;%sum(distRobot);% sum(sum(bound));
 objectiveMinMax = max([distRobot1 distRobot2 distRobot3]);
 
@@ -323,7 +259,11 @@ objectiveMinMax = max([distRobot1 distRobot2 distRobot3]);
 
 % All constraints:
 constraints = [constraint1, constraint2, constraint3, constraint4, ...
-];%,objConstraints];
+];
+
+if strcmp(flagTether,"tethered") == 1
+    constraints = [constraints, tetherConstraints];
+end
 
 % Solve system
 % options = sdpsettings('verbose',1,'solver','Gurobi');
@@ -378,9 +318,9 @@ hold off
 % robot is which in the formulation. We could've down 1T2 and 2T3, and 
 % we would get the same result.
 
-ax = gca
-exportgraphics(ax, ...
-    '/home/walter/Desktop/ThesisFigures/Timing_Untethered_1norm.jpg', 'Resolution', '1000')
+% ax = gca
+% exportgraphics(ax, ...
+%     '/home/walter/Desktop/ThesisFigures/Timing_Untethered_1norm.jpg', 'Resolution', '1000')
 % 
 
 %% Utility Functions
