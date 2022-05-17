@@ -39,6 +39,14 @@ clc;
 clear all;
 yalmip('clear');
 
+% If flagIterative == 1, the iterative method will run. Otherwise, only the
+% original simulation will run.
+flagIterative = 1;
+% If flagTether == 1, the sim will run while incorporating tether
+% constraints.
+flagTether = 1;
+
+
 numOfRobots = 3;
 numOfCities = 10;
 tetherLength = 60;
@@ -46,7 +54,7 @@ tetherLength = 60;
 % Truncated eil51 node coords further to just 5 cities
 % nodecoords = load('ToyProblemNodeCoords.txt');
 nodecoords = load('TruncatedEil51NodeCoords.txt');
-nodecoords = nodecoords(1:10,:);
+nodecoords = nodecoords(1:numOfCities,:);
 
 C = zeros(numOfCities);
 
@@ -58,7 +66,8 @@ for i = 1:numOfCities
 end
 
 C = real(C);
-C = C.^2;
+C = C.^2; % We're using the sum of squared distances (SSD) as opposed 
+% to the raw 2-norm to stay consistent between the two approaches
 
 
 %% mTSP constraints
@@ -216,200 +225,25 @@ objective2 = max(SalesmanDistances); % Minimize max individual robot tour
 % first formulation. Absolutely massive.
 
 
-
-
 %% Solve Original System
-tic 
-options = sdpsettings('verbose',0,'solver','Gurobi');
-sol = optimize(constraints_2,objective2,options);
-value(objective2)
-value(x2)
-toc
 
-[RobotDistances, RobotRowIdxs, RobotColIdxs] = ...
-    getAllRobotTourInfo(C, numOfCities, numOfRobots, value(x2));
+if (flagIterative == 0)
 
+    tic 
+    options = sdpsettings('verbose',0,'solver','Gurobi');
+    sol = optimize(constraints_2,objective2,options);
+    value(objective2)
+    value(x2)
+    toc
 
-
-%%
-
-% Make a multi-dimensional MATLAB arrray to store the output of
-% the multi-dimensional binvar matrix. Imagine a bunch of sheets of paper
-% on top of each other. Each sheet of paper is a binvar matrix
-% for a certain robot.
-robotTours = ones(numOfCities, numOfCities, numOfRobots);
-% Fill up the array
-for i = 1:numOfRobots
-    robotTours(:,:,i) = value(x2(:,:,i));
+    [RobotDistances, RobotRowIdxs, RobotColIdxs] = ...
+        getAllRobotTourInfo(C, numOfCities, numOfRobots, value(x2));
 end
-   
-% Preallocate a multi-dimensional array to all robots' traveled routes
-% in the form of row and column indices
-RobotColIdxs = ones(1, numOfCities, numOfRobots);
-RobotRowIdxs = ones(1, numOfCities, numOfRobots);
-% Preallocate an array to collect the number of nodes each robot
-% travels. Will be used later to trim the RobotColIdxs array
-numberOfNodesTraveled = ones(1,numOfRobots);
-
-% Now, start getting the actual solved values for the robots' tours
-for i = 1:numOfRobots
-    % Run function
-    [toursDistances, colIdxs, rowIdxs] = ...
-        buildTourList(C,robotTours(:,:,i),numOfCities);
-    % Drop in the extracted colIndices for a specific robot 
-    RobotColIdxs(1,1:length(colIdxs),i) = colIdxs;
-    RobotRowIdxs(1,1:length(colIdxs),i) = rowIdxs;
-    % record the length of the robot's tour
-    numberOfNodesTraveled(i) = length(colIdxs);
-end
-
-
-% Now shave down the matrix to only be as long as the longest
-% tour length taken by a specific robot:
-RobotColIdxs = RobotColIdxs(1,1:max(numberOfNodesTraveled),:);
-RobotRowIdxs = RobotRowIdxs(1,1:max(numberOfNodesTraveled),:);
-
-% Get RobotDistances. RobotDistances is a vector that tells you the 
-% distance between two robots at each city. For example, the first entry
-% tells you the distance between Robot 1 and Robot 2 when Robot 1 is 
-% at city 4 and Robot 2 is at city 2.
-% We have the indices of these distance values from the colIdxs vectors.
-
-RobotDistances = [];
-for i = 1:3
-    RobotDistances = [RobotDistances, ...
-        C(RobotColIdxs(1,:,1), RobotColIdxs(1,:,2))];
-end
-% display(RobotDistances);
-
-
-
-
-
-% 
-% RouteComparisonMatrix = [toursDistances1' toursDistances2' RobotDistances']
-
-
-% but the column indices are the most important. They're what determine
-% the robot distances at any point.
-
-
-% % for robot 1
-% [toursDistances1, colIdxs, rowIdxs] = ...
-%     buildTourList(C,robotTours(:,:,1), numOfCities);
-% % for robot 2
-% [toursDistances2, colIdxs2, rowIdxs2] = ...
-%     buildTourList(C,robotTours(:,:,2),numOfCities);
-
-
-
-%    if(length(colIdxs) < length(colIdxs2))
-%         colIdxs = [colIdxs ones(1,length(colIdxs2) - length(colIdxs))];
-%     elseif (length(colIdxs) > length(colIdxs2))
-%         colIdxs2 = [colIdxs2 ones(1,length(colIdxs)-length(colIdxs2))];    
-%    end
 
 
 %% Adding Tether Constraints Iteratively-- Getting the New System
 
-%{ 
-
-For Walter: we cannot really progress. In the meantime, just assume
-the problem is discrete. That is, 
-
-1. Do what you're trying to do previously.
-2. Then, get a solution. Assume this solution is incorrect (because it
-probably is incorrect-- that is, it probably violates the tether
-constraints)
-3. Figure out how to exclude that route and rerun the simulation.
-
-Assume the solution I get is not feasible with the tethers.
-Figure out a way to say that solution doesn't work and add a constraint
-that doesn't work.
-
-
-
-
-Then, you can do the discrete check stuff. That is, make an algorithm.
-
-The algorithm will do this:
-
-1. Specify a tether length l.
-2. Run the simulation with optimize(...)
-3. Check the now-formed matrix C.x for both robots. At each point, check
-where robot 1 is and check where robot 2. You check by seeing where
-the 1 is on the binvar matrix and looking at the corresponding C entry.
-Robot 1 may be at C(1,2) and robot 2 may be at C(4,5). You'd then check
-C(2,5), because that entry represents the distance between the two 
-robots.
-4. If C(2,5) is less than l, then no problem. Check the next point. If
-C(2,5) is greater than l, then that route can't happen because the 
-distance between the robots is greater than the tether length. 
-5. Add a constraint to prevent the robots from ending up that point.
-Specifically, you'd make a constraint that says 
-if x(1,2) == 0. and x(4,5) == 0. I'm thinking you could also maybe just 
-say x(1,2) == 0 OR x(4,5) == 0, as that would prevent that distance
-from happening in the first place, but for now we can go with the former.
-
-
-
-
-Pseudocode v1:
-
-1.run simulation
-2.check cost matrix
-3.if a robot distance is longer than an established tether length,
-throw out that constraint and rerun
-4. If no constraint is broken, break out of 
-the loop
-5. display final results
-
-
-
-Pseudocode v2:
-
-1. run simulation
-2. do r1 = C.*ans(:,:,1) and r2 = C.*ans(:,:,2). Build vectors out of 
-each one of these matrices. The vectors will be the distances in the order
-that the robot traveled. So r1 needs to be [17 31 13.8], for example.
-To do that, we'll make a function.
-
-So we'll do
-buildRobotTour(C,ans(:,:,1));
-buildRobotTour(C,ans(:,:,2));
-
-
-cycle through first row. If entry is nonzero, record the column index j
-of the entry. Also, put the value in the tourVector.
-
-Then, jump to row j and cycle through it. If the entry is nonzero,
-rewrite the column index j of the entry. Also, put the value in the 
-next entry in tourVector.
-
-Then, jump to row j and cycle through it, repeating the process.
-
-Once you hit j == 1, break out the of the loop.
-
-Update: did it!
-
-So now that we have robotOneCosts and robotTwoCosts as vectors,
-we also need the distance between those two robots at every point.
-
-Update: did it!
-
-Now, we we need to compare the lengths from distance portion
-of that matrix to the tether length. If the tether length is greater
-than a robot distance, move to the next distance-- no problem.
-
-If the tether length is less than a robot distance, add a constraint
-that disallows that path from happening. That is, add the appropriate
-constraints. Then, resolve.
-
-
-%}
-
-
-
+if (flagIterative == 1)
 
 % Set RobotDistances initially to a value greater than the tetherLength
 % so we can break into the loop
@@ -433,6 +267,9 @@ pastAnswers = 0;
 
 
 % while( sum(sum(RobotDistances(1:2,:) > tetherLength)) ~= 0 ) 
+
+
+
 tic % to see how long the sim takes
 while(1)
 
@@ -562,7 +399,7 @@ while(1)
 
 end
 
- 
+
 % Run simultion. Get tour. Call function that gets all the different tours.
 % Use three nested for loops to check every
 % differeint combination of the tour. If one combo works, take that one and
@@ -573,6 +410,8 @@ end
 % to check all the combinations.
 
 toc
+
+end
 
 %
 
@@ -609,10 +448,6 @@ toc
 % but the project will involve only a low number of robots anyway, so 
 % no problem.
 
-% The easiest way to plot the routes might be to do a for loop. At 
-% each iteration, a line is drawn between the salesman's last point
-% and his current point. We can use drawnow to make it update over time.
-
 figure(1)
 box on
 plotRoute(nodecoords, RobotRowIdxs(1,:,1) , RobotColIdxs(1,:,1), 'red')
@@ -621,65 +456,26 @@ plotRoute(nodecoords, RobotRowIdxs(1,:,2) , RobotColIdxs(1,:,2), 'magenta')
 plotRoute(nodecoords, RobotRowIdxs(1,:,3) , RobotColIdxs(1,:,3), 'blue')
 
 % 1,2,3 specifcy the two robots with which you want the tethers drawn
-plotTethers(nodecoords, RobotRowIdxs, RobotColIdxs, 1, 2, 'black', '--')
-plotTethers(nodecoords, RobotRowIdxs, RobotColIdxs, 2, 3, 'black', ':' )
-hold off
+if (flagTether == 1)
+    
+    % Another thing we'll need to do: we'll need to determine how to
+    % automatically draw the correct tethers between the robots. This task
+    % shouldn't be too hard once we figure out how to generalize the algo
+    % to any number of robots.
+    
+    plotTethers(nodecoords, RobotRowIdxs, ...
+        RobotColIdxs, 1, 2, 'black', '--')
+    plotTethers(nodecoords, RobotRowIdxs, ...
+        RobotColIdxs, 2, 3, 'black', ':' )
+    hold off
+    
+end
 
-% Save the plot onto our computer:
-ax = gca
-exportgraphics(ax, ...
-    '/home/walter/Desktop/ThesisFigures/mTSPTethered2_normSquared.jpg', 'Resolution', '1000')
-% legend colors aren't quite matching up; we'll figure out that later.
+% Save the plot onto your computer:
+% ax = gca
+% exportgraphics(ax, ...
+%     '/home/walter/Desktop/ThesisFigures/mTSPTethered2_normSquared.jpg', 'Resolution', '1000')
 
-%% Next Steps
-
-% 1.
-% Generalize the algorithm for any number of robots and cities. 
-% Having any number of cities is more important than having any number
-% of robots, so prioritize getting that to work.
-
-% Once that works, test it out with a different set of node coords 
-% (do like 10 cities) and get plots and whatnot.
-
-
-% 2. 
-% Create a way of breaking out of the algorithm if a route simply
-% can't be found. That is, it's possible that no solution exists
-% for some smaller tether lengths. That solution would be salesman 
-% tours where the distance between the robots is always less than
-% the tether length at each point. 
-
-% Maybe we can use number of iterations or time or something to get
-% this part to work. Not sure yet; maybe ask Yong?
-
-% Then, stress-test our breaking technique with super small tether lengths.
-
-% 3.
-% Add obstacles and see which parts of the algorithm will break. 
-% By "obstacles," I'm imagining constraints that prevent a robot
-% from going to a certain city.
-% Then, think of ways to prevent the algorithm from breaking.
-
-
-
-% From Yong: add points on the plot so we can see coordinates.
-% Look at the horzcat error a bit more and see what sort of problem
-% is happening.
-
-% Could also add a statement that breaks out of the loop if 
-% is sol.problem ~= 0.
-
-% It's not really necessary to store all candidate solutions right now.
-
-% Also consider obstacles. When you check the tether length after the 
-% the sim, consider a certain city to be like a dot. If the line drawn
-% between the two cities goes through that dot, exclude that solution.
-% That constraint would manifest itself as another if statement.
-
-% Get a FURI shirt for Yong. He hasn't gotten one yet, and he's pissed.
-
-% NUMBER ONE THING TOMORROW: GET THE ALGORITHM TO WORK FOR ANY NUMBER
-% OF ROBOTS
 
 %% Utility Functions
 
