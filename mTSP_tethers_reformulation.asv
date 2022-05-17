@@ -27,7 +27,7 @@ clear all;
 yalmip('clear');
 
 
-flagNorm = "one"; % options: "one" or "two-squared"
+flagNorm = "two-squared"; % options: "one" or "two-squared"
 flagTether = "tethered"; % options: "tethered" or "untethered"
 
 
@@ -160,7 +160,7 @@ tetherConstraints = [];
 for i = 1:numOfTimeSteps
     
 %     robotDistances12 = [];
-%     tetherConstraint = zeros(1,2);
+    tetherConstraint = zeros(1,2);
 
     % At each time step, 
 %     robotLocation1(i,:) = sum([x(i,:,1)' x(i,:,1)'].*nodecoords(:,(2:3)),1);
@@ -168,7 +168,7 @@ for i = 1:numOfTimeSteps
 %     robotLocation3(i,:) = sum([x(i,:,3)' x(i,:,3)'].*nodecoords(:,(2:3)),1);
     
     % Generalize robotLocation as a multi-dim array:
-%     robotLocation = zeros(numOfTimeSteps,numOfCities,numOfRobots);
+    robotLocation = zeros(numOfTimeSteps,numOfCities,numOfRoots);
     for k = 1:numOfRobots
         robotLocation(i,:,k) = ...
             sum([x(i,:,k)' x(i,:,k)'].*nodecoords(:,(2:3)),1);
@@ -181,7 +181,7 @@ for i = 1:numOfTimeSteps
         % Generalize robotDistances as a multi-dim array:
         robotDistances = zeros(numOfRobots,1);
         for k = 1:numOfRobots
-        robotDistances(k) = ...
+        robotDistances(:,:,k) = ...
             sum(abs(robotLocation(i,:,k)-robotLocation(i,:,k)));
         end
         
@@ -191,10 +191,10 @@ for i = 1:numOfTimeSteps
         % Now loop this tether constraint over all robots:
         for k = 1:numOfRobots
             tetherConstraints = [tetherConstraints; ...
-                robotDistances(k) <= tetherLength];
-%         tetherConstraints = [tetherConstraints; ...
-%                                  (robotDistances12 <= tetherLength); ...
-%                                  (robotDistances13 <= tetherLength)];
+                robotDistances(:,:,k) <=]
+        tetherConstraints = [tetherConstraints; ...
+                                 (robotDistances12 <= tetherLength); ...
+                                 (robotDistances13 <= tetherLength)];
         end
         
     end
@@ -224,14 +224,10 @@ end
 % Initialize D (taxicabDistances) matrix
 taxicabDistances = []; 
      
-% Initialize robot distances:
+
 distRobot1=0;
 distRobot2=0;
 distRobot3=0;
-
-% Initialize distRobot vector:
-distRobots = zeros(1,numOfRobots);
-
 
 % for k = 1:numOfRobots
     
@@ -239,15 +235,10 @@ distRobots = zeros(1,numOfRobots);
 
     % 1-norm implementation
     if (strcmp(flagNorm,"one") == 1) 
-% 
-%         distRobot1=distRobot1+(sum(abs(robotLocation1(i,:)-robotLocation1(i+1,:))));
-%         distRobot2=distRobot2+(sum(abs(robotLocation2(i,:)-robotLocation2(i+1,:))));
-%         distRobot3=distRobot3+(sum(abs(robotLocation3(i,:)-robotLocation3(i+1,:))));
-        
-        for k = 1:numOfRobots
-            distRobots(k) = distRobots(k) + ...
-                (sum(abs(robotLocation(i,:,k)-robotLocation(i+1,:,k))));
-        end
+
+        distRobot1=distRobot1+(sum(abs(robotLocation1(i,:)-robotLocation1(i+1,:))));
+        distRobot2=distRobot2+(sum(abs(robotLocation2(i,:)-robotLocation2(i+1,:))));
+        distRobot3=distRobot3+(sum(abs(robotLocation3(i,:)-robotLocation3(i+1,:))));
         
     end
     
@@ -265,8 +256,7 @@ distRobots = zeros(1,numOfRobots);
 
 % Build objectives:
 objective = distRobot1+distRobot2+distRobot3;%sum(distRobot);% sum(sum(bound));
-% objectiveMinMax = max([distRobot1 distRobot2 distRobot3]);
-objeectiveMinMax = max(distRobots);
+objectiveMinMax = max([distRobot1 distRobot2 distRobot3]);
 
 % 
 
