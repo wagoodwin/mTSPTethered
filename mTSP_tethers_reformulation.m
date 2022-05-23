@@ -27,7 +27,7 @@ yalmip('clear');
 
 
 flagNorm = "2-norm Squared"; % options: "1-norm" or "2-norm Squared"
-flagTether = "Untethered"; % options: "Tethered" or "Untethered"
+flagTether = "Tethered"; % options: "Tethered" or "Untethered"
 
 
 %% Setup and Easy Constraints
@@ -252,8 +252,18 @@ end
 % tetherLength, so an element-wise inequality works here.
 for i = 1:numOfTimeSteps
     for j = 1:(numOfRobots-1)
-        tetherConstraints = [tetherConstraints, ...
-            (robotDistances(i,j) <= tetherLength)];
+        
+        if (strcmp(flagNorm,"2-norm Squared") == 1)      
+            tetherConstraints = [tetherConstraints, ...
+            (robotDistances(i,j) <= tetherLength^2)];
+        end
+        
+        if (strcmp(flagNorm,"1-norm") == 1)
+            tetherConstraints = [tetherConstraints, ...
+            (robotDistances(i,j) <= tetherLength)];     
+        end
+        
+        
     end
 end
 
