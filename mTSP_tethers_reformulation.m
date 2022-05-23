@@ -17,25 +17,24 @@
     more code. 
 
     
-
-
 %}
 
 
 clc; 
 clear all;
+close all;
 yalmip('clear');
 
 
-flagNorm = "one"; % options: "one" or "two-squared"
-flagTether = "tethered"; % options: "tethered" or "untethered"
+flagNorm = "2-norm Squared"; % options: "1-norm" or "2-norm Squared"
+flagTether = "Untethered"; % options: "Tethered" or "Untethered"
 
 
 %% Setup and Easy Constraints
 
 numOfTimeSteps = 8; % corresponds to i
 numOfCities = 10; % corresponds to j
-numOfRobots = 4; % corresponds to k
+numOfRobots = 3; % corresponds to k
 
 tetherLength = 60;
 
@@ -50,12 +49,12 @@ C = zeros(numOfCities);
 for i = 1:numOfCities
     for j = 1:numOfCities   
         
-        if( (strcmp(flagNorm,"one") == 1) )
+        if( (strcmp(flagNorm,"1-norm") == 1) )
             C(i,j) = distance1(nodecoords(i,2), nodecoords(i,3), ...
             nodecoords(j,2), nodecoords(j,3));
         end
         
-        if ( (strcmp(flagNorm,"two-squared") == 1) )
+        if ( (strcmp(flagNorm,"2-norm Squared") == 1) )
              C(i,j) = distance(nodecoords(i,2), nodecoords(i,3), ...
              nodecoords(j,2), nodecoords(j,3));
         end
@@ -193,228 +192,64 @@ end
 
 
 
+% Gets the distance between the k and k-1 robot at each step
+% in time for all robots. So for k = 2, we'll get the distances
+% between robots 1 and 2 over a period of time. Store it in this
+% temp variable, and then we'll load that into our robotDistances
+% variable.
 
-% Loop 2: set up 1- and 2-norm versions of tether constraints
+% Example on the indexing: robotLocation{k}(i,:) grabs the kth
+% robot's position data, and looks at only the ith row.
 
+% So at the end of the i loop, temp will be a numOfTimeSteps x 1
+% vector. Each entry says the distance between robots k-1 and k.
 
-
-        
-if (strcmp(flagNorm,"one") == 1) 
-
-    for k = 2:numOfRobots
-
-        for i = 1:numOfTimeSteps
-
-        % Gets the distance between the k and k-1 robot at each step
-        % in time for all robots. So for k = 2, we'll get the distances
-        % between robots 1 and 2 over a period of time. Store it in this
-        % temp variable, and then we'll load that into our robotDistances
-        % variable.
-
-        % Example on the indexing: robotLocation{k}(i,:) grabs the kth
-        % robot's position data, and looks at only the ith row.
-        temp = [temp; ...
-        sum(abs(robotLocation{k-1}(i,:)-robotLocation{k}(i,:)))];
-
-        % So at the end of the i loop, temp will be a numOfTimeSteps x 1
-        % vector. Each entry says the distance between robots k-1 and k.
-
-    
-
-        
+for k=2:numOfRobots
+    for i = 1:numOfTimeSteps
+                
+        if (strcmp(flagNorm,"1-norm") == 1)  
+            temp = [temp; ...
+            sum(abs(robotLocation{k-1}(i,:)-robotLocation{k}(i,:)))];
         end
         
-        robotDistances = [robotDistances, temp];
-        temp = [];
-
+        if (strcmp(flagNorm,"2-norm Squared") == 1)
+            temp = [temp; ...
+            sum((robotLocation{k-1}(i,:)-robotLocation{k}(i,:)).^2)]; 
+        end
+        
     end
-    
-
-
+    robotDistances = [robotDistances, temp];
+    temp = [];
 end
 
-    
-    
-
-if (strcmp(flagNorm,"two-squared") == 1)
-
-    for i = 1:numOfTimeSteps
-
-    % 2-norm code would go here
-
-
-    end
-
-end
-           
 
 
 
-% Now build objective function variables:
-distcheck = 0;
-    
-    % 1-norm implementation
-if (strcmp(flagNorm,"one") == 1)
+% Now build the objective function variable:  
+for k = 1:numOfRobots
     temp = 0;
-
-    for k = 1:numOfRobots
-
-        for i = 2:numOfTimeSteps
-
-            % Store the distance traveled by the kth robot in a temp
-            % variable. Allows us to build the robotDistTraveled vector.
-            % That vector will hold how far each robot has traveled total
-            % in each entry.   
-%             distcheck = distcheck + sum(abs(robotLocation(i-1,:,1)-robotLocation(i,:,1)));
-            
-            % Gives us total distance traveled by the kth robot
+    for i = 2:numOfTimeSteps
+        
+        % one-norm implementation
+        if (strcmp(flagNorm,"1-norm") == 1) 
             temp = temp + ...
-                sum(abs(robotLocation{k}(i-1,:)-robotLocation{k}(i,:)));
-            
+            sum(abs(robotLocation{k}(i-1,:)-robotLocation{k}(i,:)));
         end
-
-    robotDistTraveled = [robotDistTraveled; temp];
-    temp = 0;
-
-    end
-   
-    
-
-end
-
-
-    
-    
-% two-squared norm implementation
-if (strcmp(flagNorm,"two-squared") == 1)
-
-    for i = 1:numOfTimeSteps
-
-    end
-
-
-end
-    
         
-    
-%{    
-    
-    
-    
-%     for i = 1:numOfTimeSteps
-% 
-% %         % At each time step, 
-% %         robotLocation1(i,:) = sum([x(i,:,1)' x(i,:,1)'].*nodecoords(:,(2:3)),1);
-% %         robotLocation2(i,:) = sum([x(i,:,2)' x(i,:,2)'].*nodecoords(:,(2:3)),1);
-% %         robotLocation3(i,:) = sum([x(i,:,3)' x(i,:,3)'].*nodecoords(:,(2:3)),1);
-% 
-%         % Generalize robotLocation as a multi-dim array:
-%         
-% %         temp = sum([x(i,:,k)' x(i,:,k)'].*nodecoords(:,(2:3)),1);
-% %         robotLocation(i,:,k) = temp;
-% %         robotLocation(i,:,k) = sum([x(i,:,k)' x(i,:,k)'].*nodecoords(:,(2:3)),1);
-% 
-%         % 1-norm implementation
-%         if (strcmp(flagNorm,"one") == 1) 
-%             
-%             robotDistances = [robotDistances;  ...
-%                 sum(abs(robotLocation(i,:,k)-robotLocation(i,:,k+1)));
-% 
-%     %         robotDistances12 = sum(abs(robotLocation1(i,:)-robotLocation2(i,:)));
-%     %         robotDistances13 = sum(abs(robotLocation1(i,:)-robotLocation3(i,:)));
-% 
-%         end
-% 
-% 
-%         % Squared 2-norm implementation (sum of squared distances)  
-%         if (strcmp(flagNorm,"two-squared") == 1)
-% 
-%             robotDistances12 = sum((robotLocation1(i,:)-robotLocation2(i,:)).^2);
-%             robotDistances13 = sum((robotLocation1(i,:)-robotLocation3(i,:)).^2);
-%             tetherConstraints = [tetherConstraints; ...
-%                                      (robotDistances12 <= tetherLength^2); ...
-%                                      (robotDistances13 <= tetherLength^2)];
-% 
-%         end
-% 
-% 
-%     end
+        
+        % squared two-norm implementation
+        if (strcmp(flagNorm,"2-norm Squared") == 1)
+            temp = temp + ...
+            sum((robotLocation{k}(i-1,:)-robotLocation{k}(i,:)).^2);            
+        end
+        
+    end
+    robotDistTraveled = [robotDistTraveled; temp];
+end
 
-
-
-% % Now loop the tether constraint over all robots:
-% for k = 1:numOfRobots
-%     tetherConstraints = [tetherConstraints; ...
-%         robotDistances(k) <= tetherLength];
-% %         tetherConstraints = [tetherConstraints; ...
-% %                                  (robotDistances12 <= tetherLength); ...
-% %                                  (robotDistances13 <= tetherLength)];
-% end
-
-% Idea: to enforce the objective function, we need
-% each robot's distance traveled. We use robotLocation to get each robot's
-% displacement vector, and then we take the norm of the difference in
-% robots' individual displacement vectors over time to get the the robot
-% distances. We end up with total distances traveled for each robot, and we
-% use these distances for our objective function.
-
-
-
-
-
-
-
-% Initialize D (taxicabDistances) matrix
-% taxicabDistances = []; 
-%      
-% % Initialize robot distances:
-% distRobot1=0;
-% distRobot2=0;
-% distRobot3=0;
-% 
-% % Initialize distRobot vector:
-% distRobots = zeros(numOfRobots,1);
-
-% 
-% % for k = 1:numOfRobots
-%     
-%     for i = 1:numOfTimeSteps-1
-% 
-%     % 1-norm implementation
-%     if (strcmp(flagNorm,"one") == 1) 
-% % 
-% %         distRobot1=distRobot1+(sum(abs(robotLocation1(i,:)-robotLocation1(i+1,:))));
-% %         distRobot2=distRobot2+(sum(abs(robotLocation2(i,:)-robotLocation2(i+1,:))));
-% %         distRobot3=distRobot3+(sum(abs(robotLocation3(i,:)-robotLocation3(i+1,:))));
-%         
-%         for k = 1:numOfRobots
-%             distRobots(k) = distRobots(k) + ...
-%                 (sum(abs(robotLocation(i,:,k)-robotLocation(i+1,:,k))));
-%         end
-%         
-%     end
-%     
-%     % Squared 2-norm implementation (sum of squared distances) 
-%     if (strcmp(flagNorm,"two-squared") == 1)
-% 
-%         distRobot1=distRobot1+(sum((robotLocation1(i,:)-robotLocation1(i+1,:)).^2));
-%         distRobot2=distRobot2+(sum((robotLocation2(i,:)-robotLocation2(i+1,:)).^2));
-%         distRobot3=distRobot3+(sum((robotLocation3(i,:)-robotLocation3(i+1,:)).^2));
-%          
-%     end
-%         
-% 
-%     end
-    
-%}
     
 % Enforce tether constraints. We need every entry to be less than
 % tetherLength, so an element-wise inequality works here.
-
-% THIS IS DOING ITS JOB, SO I'M GUESSING ROBOTDISTANCES ISN'T
-% HOLDING THE RIGHT DISTANCES. SO EITHER ROBOTDISTANCES IS WRONG OR
-% ROBOTLOCATIONS IS WRONG
-
 for i = 1:numOfTimeSteps
     for j = 1:(numOfRobots-1)
         tetherConstraints = [tetherConstraints, ...
@@ -423,25 +258,20 @@ for i = 1:numOfTimeSteps
 end
 
 
-% SO HERE'S WHAT MAKES NO SENSE. IT LOOKS LIKE THE CONSTRAINTS ARE WORKING.
-% I CHECKED THE DISTANCES BETWEEN ROBOTS 1 AND 2 AND ROBOTS 2 AND 3, AND
-% THEY'RE ALL LESS THAN 60 (THE TETHERS ARE CURRENTLY PLOTTED BETWEEN THE
-% WRONG ROBOTS, AND WE'LL ALSO HAVE TO GENERALIZE THOSE AFTER THIS).
-
-% SO WE'RE SOMEHOW GETTING A SLIGHTLY WORSE RESULT THAT BEFORE. WE STILL
-% GET THE SAME OBJECTIVE FUNCTION VALUE. THAT MAKES ME THINK IT'S AGAIN
-% SOME ISSUE WITH THE TETHER CONSTRAINT. THESE TETHER CONSTRAINTS ARE
-% TIGHTENING THE FEASIBLE REGION MORE THAN THHEY SHOULD, IOW. REALLY WEIRD.
-% 
-
-
-
 % Build objectives:
 % objective = distRobot1+distRobot2+distRobot3;%sum(distRobot);% sum(sum(bound));
 % objectiveMinMax = max([distRobot1 distRobot2 distRobot3]);
 
-objectiveMinMax = max(robotDistTraveled); % SEEMS TO BE WORKING
+
+% Pro-Tip from Dr. Yong: add in a tiny contribution of a MinSum term to the
+% objective function. That'll ensure we're still mostly focused on the
+% MinMax objective, but it'll also sprinkle in a bit to minimize the total
+% distance traveled. It works.
+% objectiveMinMax = 0.999*max(robotDistTraveled) + ...
+%     0.001*sum(robotDistTraveled); 
+objectiveMinMax = max(robotDistTraveled);
 % objectiveMinMax = max([distRobot1 distRobot2 distRobot3]);
+
 
  
 
@@ -452,7 +282,7 @@ objectiveMinMax = max(robotDistTraveled); % SEEMS TO BE WORKING
 constraints = [constraint1, constraint2, constraint3, constraint4, ...
 ];
 
-if strcmp(flagTether,"tethered") == 1
+if strcmp(flagTether,"Tethered") == 1
     constraints = [constraints, tetherConstraints];
 end
 
@@ -491,18 +321,27 @@ figure(1)
 % Plot the robots' tours:
 hold on
 box on
-plotRoute(nodecoords, int32(value(x(:,:,1))), numOfTimeSteps, numOfCities, 'red')
-plotRoute(nodecoords, int32(value(x(:,:,2))), numOfTimeSteps, numOfCities, 'blue')
-plotRoute(nodecoords, int32(value(x(:,:,3))), numOfTimeSteps, numOfCities, 'magenta')
+% To get unique colors for each robot's path, use colors from a colormap.
+% Initiate that colormap here:
+cmap = cool(numOfRobots);
+cmapTethers = hsv(numOfRobots);
+for k = 1:numOfRobots
+    
+    plotRoute(nodecoords, int32(value(x(:,:,k))), numOfTimeSteps, ...
+        numOfCities, cmap(k,:), flagNorm, flagTether)
+
+end
 
 % Plot the tethers between the robots:
 
-if (strcmp(flagTether,"tethered"))
-
-    plotTethers(numOfRobots, numOfTimeSteps, numOfCities, ... 
-        nodecoords, int32(value(x)),1,2, 'black', ':')
-    plotTethers(numOfRobots, numOfTimeSteps, numOfCities, ... 
-        nodecoords, int32(value(x)), 2,3, 'black', '--')  
+if (strcmp(flagTether,"Tethered"))
+    
+    for k = 2:numOfRobots
+           
+        plotTethers(numOfRobots, numOfTimeSteps, numOfCities, ... 
+        nodecoords, int32(value(x)),k-1,k, cmapTethers(k,:), '--')
+        
+    end 
     
 end
 
@@ -538,7 +377,7 @@ end
 
 % nothing to return here
 function[] = plotRoute(nodecoords, xBinvar, ...
-                       numOfTimeSteps, numOfCities, color) 
+                       numOfTimeSteps, numOfCities, cmapCol, flagNorm, flagTether) 
     % for xBinvar, just enter a single slice of the x matrix-- i.e., 
     % value(x(:,:,1)).
     
@@ -592,11 +431,11 @@ function[] = plotRoute(nodecoords, xBinvar, ...
         % cleaner:
  
         dp = point2 - point1;
-        quiver(point1(1),point1(2),dp(1),dp(2),string(color))
+        quiver(point1(1),point1(2),dp(1),dp(2), 'Color', cmapCol)
 %         set(h1,'AutoScale','on', 'AutoScaleFactor', 0.07)
         % x components of point 1 and 2, 
         % then y components of point 1 and 2:
-        plot([point1(1) point2(1)], [point1(2) point2(2)], string(color))
+        plot([point1(1) point2(1)], [point1(2) point2(2)], 'Color', cmapCol)
         
         hold on
         pause(0.1);
@@ -605,7 +444,8 @@ function[] = plotRoute(nodecoords, xBinvar, ...
     
 %     title("Robot Tours: 60 Unit Tether, MinMax Objective");
 %     title("Robot Tours: 70 Unit Tether, MinSum Objective, 1-norm");
-    title("Robot Tours: Timing Formulation, Untethered, 1-norm");
+    title("Robot Tours: Timing Formulation, " + ...
+        num2str(flagTether) + ", " + num2str(flagNorm));
     xlabel("x distance (arbitrary units)");
     ylabel("y distance (arbitrary units)");
 
@@ -615,7 +455,7 @@ end
 % No outputs (void return type). Inputs: robot tours and the two
 % robots you want.
 function [] = plotTethers(numOfRobots, numOfTimeSteps, numOfCities, ... 
-              nodecoords, totalxBinvar, r1, r2, color, lineStyle)
+              nodecoords, totalxBinvar, r1, r2, cmapCol, lineStyle)
 
     
                       
@@ -670,8 +510,8 @@ function [] = plotTethers(numOfRobots, numOfTimeSteps, numOfCities, ...
 
 
         plot([tetherPoint1(1) tetherPoint2(1)], ...
-             [tetherPoint1(2) tetherPoint2(2)], 'color', ...
-              string(color), 'LineStyle', char(lineStyle), ...
+             [tetherPoint1(2) tetherPoint2(2)], 'Color', ...
+              cmapCol, 'LineStyle', char(lineStyle), ...
               'LineWidth', 1.5)
 
         hold on
