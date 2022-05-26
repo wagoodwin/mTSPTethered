@@ -1,2 +1,2 @@
 # mTSPTethered
-Algorithms for solving mTSP problems
+Algorithms for solving mTSP problems with tethered robots (salesmen)
