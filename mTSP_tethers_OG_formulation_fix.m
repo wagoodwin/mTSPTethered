@@ -1,35 +1,23 @@
-%% Background
+% Background
 
 %{
-
 We want to take the mTSP formulation and incorporate constraints that
 represent tethers
-
 We've got two routes here.
-
 ROUTE 1: Brute force
-
 Make a toy example (2 robots, 3 or 4 cities) and add a bunch of tether
 constraints like we talked about in our meeting. Run it and observe
 the results
-
 RESULT 2: Also Brute force, but different
-
 Run the whole simulation and then check to see if a tether constraint was
 violated. If a constraint was violated, exclude that solution, add a 
 constraint that prevents that solution from happening, and resolve. 
-
 The constraint would involve just saying x(i,j,1) and x(i,j,2) can't 
 both be 1 at the same time.
-
 In this case, we'd also make a toy problem to speed things up. 2 robots
 and 5 cities.
-
-
-
 To change between norms, just change the distance function in the 
 % cost matrix.
-
 %}
 
 
@@ -45,7 +33,6 @@ flagIterative = 1;
 % If flagTether == 1, the sim will run while incorporating tether
 % constraints.
 flagTether = 1;
-% One more thing to add: a flag to designate what kind of norm we're using
 
 
 numOfRobots = 3;
@@ -927,5 +914,3 @@ function [] = plotTethers(nodecoords, RobotRowIdxs,RobotColIdxs, ...
 
     end
 end
-
-
