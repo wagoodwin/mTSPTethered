@@ -24,30 +24,43 @@ To change between norms, just change the distance function in the
 %% Setup
 
 clc; 
-clear all;
+clearvars;
 yalmip('clear');
 
 % If flagIterative == 1, the iterative method will run. Otherwise, only the
 % original simulation will run.
-flagIterative = 1;
-% If flagTether == 1, the sim will run while incorporating tether
-% constraints.
-flagTether = 1;
-
+flagIterative = 0;
+% If flagTether == 1, the plotting tool will include tethers. 
+flagTether = 0;
+% Note that if you turn on flagIterative, you should probably turn on
+% flagTether, as the Iterative Method is the version of the sim that
+% implements the tether constraints. 
 
 numOfRobots = 3;
-numOfCities = 10;
+numOfCities = 11; % including the dummy city
 tetherLength = 60;
+% Distance value used for dummy node creation. Ensures that our 'zeroth'
+% node has zero cost from 0 to node 1 but doesn't go to other nodes
+% during optimization.
+M = 10e10; % Tried M = inf, but YALMIP poops itself.
+
+% Initialize sdpvar object for use in constraints 3,4. Will be 
+% included in objective function. Traversal: any entrance or exit
+numNodeTraversals = sdpvar(numOfCities, 1, 'full');
+
+x = binvar(numOfCities, numOfCities, numOfRobots, 'full');
+u = sdpvar(numOfCities, 1, 'full');
+p = numOfCities - numOfRobots;
 
 % Truncated eil51 node coords further to just 5 cities
 % nodecoords = load('ToyProblemNodeCoords.txt');
 nodecoords = load('TruncatedEil51NodeCoords.txt');
-nodecoords = nodecoords(1:numOfCities,:);
+nodecoords = nodecoords(1:numOfCities-1,:);
 
 C = zeros(numOfCities);
 
-for i = 1:numOfCities
-    for j = 1:numOfCities   
+for i = 1:numOfCities-1
+    for j = 1:numOfCities-1   
         C(i,j) = distance(nodecoords(i,2), nodecoords(i,3), ...
            nodecoords(j,2), nodecoords(j,3));
     end
@@ -57,160 +70,154 @@ C = real(C);
 C = C.^2; % We're using the sum of squared distances (SSD) as opposed 
 % to the raw 2-norm to stay consistent between the two approaches
 
+% Reformat the cost matrix to have a dummy node:
+temp = zeros(numOfCities+1, numOfCities+1);
+temp(2:end,2:end) = C;
+
+temp(1,3:end) = M*ones(1,(numOfCities+1 - 2));
+temp(3:end,1) = M*ones((numOfCities+1 -2),1);
+
+C = temp(1:end-1,1:end-1);
+
+% Set the cost to return to the dummy nodes to be the same as the cost to
+% return to node 1:
+%C(1:end,1) = C(1:end,2);
+
 
 %% mTSP constraints
 
-x2 = binvar(numOfCities, numOfCities, numOfRobots, 'full');
-
-u = sdpvar(numOfCities, 1, 'full');
-p = numOfCities - numOfRobots;
-
-% ConstraintS 1 and 2 (eqns 10 and 11)
-constraint1_2 = [];
-constraint2_2 = [];
+% ConstraintS 1 and 2 (eqns 10 and 11 in the ICTAI paper)
+% Ensure robots start and end at the first (dummy node)
+constraint1 = [];
+constraint2 = [];
 x1jkTotal = 0;
 xj1kTotal = 0;
 for k = 1:numOfRobots
     x1jkTotal = 0;
     xj1kTotal = 0;
     for j = 2:numOfCities
-        x1jkTotal = x1jkTotal + x2(1,j,k);
-        xj1kTotal = xj1kTotal + x2(j,1,k);
+        x1jkTotal = x1jkTotal + x(1,j,k);
+        xj1kTotal = xj1kTotal + x(j,1,k);
     end
-    constraint1_2 = [constraint1_2, (x1jkTotal == 1)];
-    constraint2_2 = [constraint2_2, (xj1kTotal == 1)];
+    constraint1 = [constraint1, (x1jkTotal == 1)];
+    constraint2 = [constraint2, (xj1kTotal == 1)];
 end
 
 
-% Constraint 3 (eqn 12)
-% First, build the constraint vector:
-constraint3_2 = [];
-% Then, build a vector to hold the sum of all of 
+% Constraints 3 and 4 (eqns 12 and 13)
+% Ensures robots, as a whole, enter and exit each node once except for the
+% first node. We want all robots to go to the first node, so we want the
+% robots to enter and exit that node 3 times, not just once. We implement
+% that change in the following constraints after these 2.
+
+constraint3 = []; % constraint 3  start
+% Then, build a vector to hold the sum of all of
 % the values of each numOfCities x numOfRobots matrix.
 % See handwritten work for a more intuitive visualiztion.
-% planeTotal_ik = zeros(1, numOfCities, 1);
 planeTotal_ik = 0;
-for j = 2:numOfCities
+for j = 1:numOfCities
     % reset the value of planeTotal_ik to 0 for the next constraint:
     planeTotal_ik = 0;
     for i = 1:numOfCities
         for k = 1:numOfRobots
-            if i ~=j
-%                 planeTotal_ik(1,j,1) = planeTotal_ik(1,j,1) + x(i,j,k);
-                  planeTotal_ik = planeTotal_ik + x2(i,j,k);
-            end
-            
+                  planeTotal_ik = planeTotal_ik + x(i,j,k);
         end
     end
     % Build the constraint here
-    constraint3_2 = [constraint3_2, (planeTotal_ik == 1)]; % legal? I think so 
-    
+    constraint3 = [constraint3, (planeTotal_ik == numNodeTraversals(j)) ];
 end
 
-
-% New issue: we can't assign an sdpvar to a vector. As such,
-% the loop I had for constraint3 had to be reworked such that we're
-% only storing the planeTotal_ik value as a single variable.
-
-
-% Constraint 4 (eqn 13)
-constraint4_2 = [];
-% planeTotal_jk = zeros(numOfcities, 1, 1);
+constraint4 = []; % constraint 4 start
 planeTotal_jk = 0;
-for i = 2:numOfCities
+for i = 1:numOfCities
     planeTotal_jk = 0;
     for j = 1:numOfCities
         for k = 1:numOfRobots
-            if i ~=j
-%                 planeTotal_jk(i,1,1) = planeTotal_jk(i,1,1) + x(i,j,k);
-                  planeTotal_jk = planeTotal_jk + x2(i,j,k);
-            end
-            
+                  planeTotal_jk = planeTotal_jk + x(i,j,k);
         end
     end
-    constraint4_2 = [constraint4_2, (planeTotal_jk == 1)];
-    
+    constraint4 = [constraint4, (planeTotal_jk == numNodeTraversals(i)) ];
 end
 
+
+
+
 % Constraint 5 (eqn 14)
-% lhsSum = zeros(1,numOfCities, numOfRobots);
-% rhsSum = zeros(numOfCities, 1, numOfRobots);
+% Prevent robots from entering and exiting more than one city at a time
 lhsSum = 0;
 rhsSum = 0;
-constraint5_2 = [];
-% Build LHS sum (ignore this comment now)
+constraint5 = [];
 for j = 2:numOfCities
-  
     for k = 1:numOfRobots
         for i = 1:numOfCities
             if i ~= j
-%                 lhsSum(1,j,k) = lhsSum(1,j,k) + x(i,j,k);
-                  lhsSum = lhsSum + x2(i,j,k);
-                  rhsSum = rhsSum + x2(j,i,k);
+                  lhsSum = lhsSum + x(i,j,k);
+                  rhsSum = rhsSum + x(j,i,k);
             end
         end
-        constraint5_2 = [constraint5_2, (lhsSum == rhsSum)];
+        constraint5 = [constraint5, (lhsSum == rhsSum)];
         % 0 out sums for next constraint
         lhsSum = 0;
         rhsSum = 0;
-        %constraint5 = [constraint5, lhsSum(1,j,k) == 1];
-    end
-    
-      
+    end  
 end
 
-
-% Subtour elimination constraint (SEC)
-%xS = sum(x,3); % p*x(i,j) becomes p*sum(x,3)? Should make a matrix of
-% numOfCities by numOfCities, where each entry is the sum of all of the
-% binvars for each salesman at each curve length.
-
-% Wait: xS = sum(x,3) won't work because we won't be able to rule out
-% situations where i == j.
+% Constraint 6: subtour elimination constraints (SECs)
 xS = 0;
-
-constraint6_2 = [];
+constraint6 = [];
 for j = 2:numOfCities
-    
-    for i = 2:numOfCities
-        
+    for i = 2:numOfCities 
         for k = 1:numOfRobots
-            xS = xS + x2(i,j,k);
-
+            xS = xS + x(i,j,k);
             if i ~= j
-%             constraint5 = [constraint5, u(i)-u(j) + p*x(i,j) <= p -1];
-              constraint6_2 = [constraint6_2, (u(i)-u(j) + p*xS <= p -1)];
+              constraint6 = [constraint6, (u(i)-u(j) + p*xS <= p -1)];
             end
-            
             xS = 0; % reset to 0 for next iteration of constraint 
         end
-
     end
-    
 end
+constraint6 = [];
 
-constraint7_2 = [];
+% Ensure a robot can't visit itself
+constraint7= [];
 for i = 1:numOfRobots
-    constraint7_2 = [constraint7_2, trace(x2(:,:,i)) == 0];
+    constraint7 = [constraint7, trace(x(:,:,i)) == 0];
 end
 
 
-% Complete constraints
-constraints_2 = [constraint1_2, constraint2_2, constraint3_2, ...
-                 constraint4_2, constraint5_2, ...
-                 constraint6_2, constraint7_2];
+% Ensure the number of node traversals for each city is
+% at least equal to one:
+constraint8 = [(numNodeTraversals >= 1)];
+
+
+%% Dantzig-Fulkerson-Johnson Subtour Elminination Constraint
+
+% We want to outrule every possible subtour. For a 10-city system,
+% we'll have 2e10 constraints. Each constraint outrules a specific subtour.
+
+
+
+
+%% Final constraints and objectives
+
+% Complete constraints             
+constraints = [constraint1, constraint2, constraint3, constraint4, ...
+               constraint5, constraint6, constraint7, constraint8];
  
 % Objectives
 SalesmanDistances = [];
-for i = 1:numOfRobots
-    SalesmanDistances = [SalesmanDistances sum(sum(C.*x2(:,:,i)))];
+for k = 1:numOfRobots
+    SalesmanDistances = [SalesmanDistances ...
+                         sum(sum(C(1:end,1:end).*x(1:end,1:end,k)))];
+%     SalesmanDistances = [SalesmanDistances ...
+%                          sum(sum(C(1:end,1:end).*x(1:end,1:end,k)))];
 end
 
 
 objective1 = sum(SalesmanDistances); % Minimize total distance of all tours
 objective2 = max(SalesmanDistances); % Minimize max individual robot tour
-% This objective is confirmed to give us the same result as the 
-% first formulation. Absolutely massive.
+% Min weighted sum of max single robot tour and number of node revisits
+objective3 = max(SalesmanDistances) + 0.001*sum(numNodeTraversals);
 
 
 %% Solve Original System
@@ -218,14 +225,14 @@ objective2 = max(SalesmanDistances); % Minimize max individual robot tour
 if (flagIterative == 0)
 
     tic 
-    options = sdpsettings('verbose',0,'solver','Gurobi');
-    sol = optimize(constraints_2,objective2,options);
-    value(objective2)
-    value(x2)
+    options = sdpsettings('verbose',1,'solver','Gurobi');
+    sol = optimize(constraints,objective3,options);
+    value(objective3)
+    value(x)
     toc
 
-    [RobotDistances, RobotRowIdxs, RobotColIdxs] = ...
-        getAllRobotTourInfo(C, numOfCities, numOfRobots, value(x2));
+%     [RobotDistances, RobotRowIdxs, RobotColIdxs] = ...
+%         getAllRobotTourInfo(C, numOfCities, numOfRobots, value(x2));
 end
 
 
