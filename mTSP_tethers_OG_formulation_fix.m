@@ -1,5 +1,8 @@
 % Background
 
+
+
+
 %{
 We want to take the mTSP formulation and incorporate constraints that
 represent tethers
@@ -23,6 +26,8 @@ To change between norms, just change the distance function in the
 
 %% Setup
 
+% TO RUN: Just press "Run" in the MATLAB editor
+
 clc; 
 clearvars;
 yalmip('clear');
@@ -44,9 +49,15 @@ tetherLength = 60;
 % during optimization.
 M = 10e10; % Tried M = inf, but YALMIP poops itself.
 
+% Set that represents all nodes but the first. Used for generating a set of
+% all possible subtours with Dantzig-Fulkerson-Johsnon (DFJ) subtour
+% eliminiation constraints (SECs).
+V = {2,3,4,5,6,7,8,9,10,11};
+V0 = {1,2,3,4,5,6,7,8,9,10,11}; % set of nodes that includes dummy node
+
 % Initialize sdpvar object for use in constraints 3,4. Will be 
 % included in objective function. Traversal: any entrance or exit
-numNodeTraversals = sdpvar(numOfCities, 1, 'full');
+numNodeTraversals = sdpvar(numOfCities, numOfRobots, 'full');
 
 x = binvar(numOfCities, numOfCities, numOfRobots, 'full');
 u = sdpvar(numOfCities, 1, 'full');
@@ -115,31 +126,47 @@ constraint3 = []; % constraint 3  start
 % the values of each numOfCities x numOfRobots matrix.
 % See handwritten work for a more intuitive visualiztion.
 planeTotal_ik = 0;
-for j = 1:numOfCities
-    % reset the value of planeTotal_ik to 0 for the next constraint:
-    planeTotal_ik = 0;
-    for i = 1:numOfCities
-        for k = 1:numOfRobots
-                  planeTotal_ik = planeTotal_ik + x(i,j,k);
+% for j = 1:numOfCities
+%     % reset the value of planeTotal_ik to 0 for the next constraint:
+%     planeTotal_ik = 0;
+%     for i = 1:numOfCities
+%         for k = 1:numOfRobots
+%                   planeTotal_ik = planeTotal_ik + x(i,j,k);
+%         end
+%     end
+%     % Build the constraint here
+%     constraint3 = [constraint3, (planeTotal_ik == numNodeTraversals(j)) ];
+% end
+for k = 1:numOfRobots
+    for j = 1:numOfCities
+        planeTotal_ik = 0;
+        for i = 1:numOfCities
+            planeTotal_ik = planeTotal_ik + x(i,j,k);
         end
+        constraint3 = [constraint3, (planeTotal_ik == numNodeTraversals(j,k))];
     end
-    % Build the constraint here
-    constraint3 = [constraint3, (planeTotal_ik == numNodeTraversals(j)) ];
 end
 
 constraint4 = []; % constraint 4 start
 planeTotal_jk = 0;
-for i = 1:numOfCities
-    planeTotal_jk = 0;
-    for j = 1:numOfCities
-        for k = 1:numOfRobots
-                  planeTotal_jk = planeTotal_jk + x(i,j,k);
+% for i = 1:numOfCities
+%     planeTotal_jk = 0;
+%     for j = 1:numOfCities
+%         for k = 1:numOfRobots
+%                   planeTotal_jk = planeTotal_jk + x(i,j,k);
+%         end
+%     end
+%     constraint4 = [constraint4, (planeTotal_jk == numNodeTraversals(i)) ];
+% end
+for k = 1:numOfRobots
+    for i = 1:numOfCities
+        planeTotal_jk = 0;
+        for j = 1:numOfCities
+            planeTotal_jk = planeTotal_jk + x(i,j,k);
         end
+        constraint4 = [constraint4, (planeTotal_jk == numNodeTraversals(i,k))];
     end
-    constraint4 = [constraint4, (planeTotal_jk == numNodeTraversals(i)) ];
 end
-
-
 
 
 % Constraint 5 (eqn 14)
@@ -178,7 +205,7 @@ for j = 2:numOfCities
 end
 constraint6 = [];
 
-% Ensure a robot can't visit itself
+% Ensure a robot can't visit itself. Remove when instituting lingering
 constraint7= [];
 for i = 1:numOfRobots
     constraint7 = [constraint7, trace(x(:,:,i)) == 0];
@@ -187,7 +214,11 @@ end
 
 % Ensure the number of node traversals for each city is
 % at least equal to one:
-constraint8 = [(numNodeTraversals >= 1)];
+
+% Changed so the node traversals are for each robot instead of total:
+% We use sum so the number of node traversals is at least 1 for at least
+% one robot. I.e., you could have [1 0 0] [0 1 0] or [0 2 1] but NOT [0 0 0]
+constraint8 = [(sum(numNodeTraversals,2) >= 1)];
 
 
 %% Dantzig-Fulkerson-Johnson Subtour Elminination Constraint
@@ -195,6 +226,156 @@ constraint8 = [(numNodeTraversals >= 1)];
 % We want to outrule every possible subtour. For a 10-city system,
 % we'll have 2e10 constraints. Each constraint outrules a specific subtour.
 
+% First thing we need to do: get a set of all subsets of the set 
+% V\{1} = {1,2,3,...,numOfCities}\{1}. This set of all subsets of V is 
+% just the set of all subtours! We don't include 1 because, if we did,
+% then we'd have tours with 1 in them, making them NOT subtours by
+% definition.
+
+% Definition. A subtour is a tour that does not include the origin.
+
+% So first get all possible subtours:
+S = PowerSet(V);
+
+% Ensure the cardinality of the subsets lays between 2 and (numOfCities-1)
+S = S(2:end-1);
+
+%{
+% Note: to remove cell i from a cell array B, do B(i) = [];
+
+% % We're basically checking to see where the size of the cells goes from 1
+% % to 2 and then from (numOfCities -2) to (numOfCities -1). Only works
+% % because the cardinalities of the subtour sets comprise a sequence that 
+% % starts at 1 and only increases.
+% lastIndexOfOneElementCells = 0;
+% firstIndexOfHighCardElementCells = 0;
+% for i = 1:numel(S)-1
+%     if (numel(S{i}) == 1) && (numel(S{i+1}) == 2)
+%         lastIndexOfOneElementCells = i;
+%     end
+%     if (numel(S{i}) == (numOfCities -2) ) && ...
+%             (numel(S{i+1}) == (numOfCities -1) )
+%         firstIndexOfHighCardElementCells = i;
+%     end
+% end
+% % UPDATE: this method to get rid of 1 and 9-node tours isn't working.
+% % Harcoding the indices for now. 
+% 
+% lastIndexOfOneElementCells = 10;
+% firstIndexOfHighCardElementCells = 513;
+
+% S = S(lastIndexOfOneElementCells+1:firstIndexOfHighCardElementCells-1);
+
+
+% 
+% % Now implement the constraints:
+% constraintSEC = [];
+% xijkSum = 0;
+% % For each subtour (each set in S)
+% for t = 1:numel(S)
+%     % For each robot
+%     for k = 1:numOfRobots
+%         % NOW we do our double sum
+%         for i = 1:numel(S{t})
+                % Debugging trick (temporary)
+                if t == 383
+                    disp("dummy line");
+                end
+%             % We sum all j's that aren't in the set S:
+%             for j = 1:numel(V0) % for j not in S,
+%                     % Checks to ensure j is not a member of S:
+%                 if( sum((ismember(cell2mat(S{t}),j)) == 0) )
+%                     xijkSum = xijkSum + x(S{t}{i},j,k);
+%                 end
+%             end
+%         end
+%         constraintSEC = [constraintSEC, (xijkSum >= 2)];
+%         % Reset sum for next robot:
+%         xijkSum = 0;
+%     end
+% end
+
+%}
+
+
+% Now implement the constraints:
+% bin represents whether a robot is inside or outside a subset. If bin = 1,
+% that means the robot is in the subset S{t}. Otherwise,
+% if bin = 0, the robot is not in the subset S{t} (can't have any tours
+% inside S). bin is per robot. 
+bin = binvar(numel(S),numOfRobots,'full');
+constraintSEC = [];
+xijkSum = 0;
+xijkSum2 = 0;
+xijkSum3 = 0;
+% For each robot
+for k = 1:numOfRobots
+    % For each subtour (each set in S)
+    for t = 1:numel(S)
+        % NOW we do our double sum
+        for i = 1:numel(S{t})
+            % We sum all j's that aren't in the set S:
+            for j = 1:numel(V0)
+                % for j NOT in S, 
+                if( sum((ismember(cell2mat(S{t}),j))) == 0 ) 
+                    xijkSum = xijkSum + x(S{t}{i},j,k); %exits (wrt S{t})
+                    xijkSum2 = xijkSum2 + x(j,S{t}{i},k); %entrances
+                % for j IN S, 
+                else
+                    % Counts the number of traversals inside the subtour
+                    % S{t}:
+                    xijkSum3 = xijkSum3 + x(S{t}{i},j,k);
+                end
+            end
+        end
+        % If the robot IS in the set, then bin(t,k) is 1, so the
+        % constraints with xijkSum3 are made. These constraints force the robot,
+        % when it's in the set, to enter at least once, exit at least once,
+        % and have a number of entrances and exits equal to each other. 
+        
+        % We don't need to enforce that the robots enter and exit at least
+        % once here, actually, because we've already included that 
+        % constraint earlier. UPDATE: MAYBE WE DO
+        constraintSEC = [constraintSEC, implies(bin(t,k), ... 
+            [(xijkSum >=1), (xijkSum2 >= 1), (xijkSum == xijkSum2) ])];
+        % If the robot is NOT in the set, ensure that the number of
+        % traversals (measured by the number of times xijk = 1 for i,j in
+        % the set S) is equal to 0:
+        constraintSEC = [constraintSEC,implies(1-bin(t,k),xijkSum3 ==0)];
+        xijkSum = 0;
+        xijkSum2 = 0;
+        xijkSum3 = 0;
+    end
+end
+
+
+% Note on summation in website: i not in S really means i in V0\S, where
+% V0 is the set of ALL nodes (including the dummy node)
+
+% The xijkSums don't have to hold for each k. Only has to hold for one k.
+% Reason: if we did it for each k, for each subset, we'd make the robots
+% obey the constraint for each subset, forcing the robots to visit all of
+% the cities, which results in them having the same tours because that one
+% tour is the shortest for a single robot.
+
+% Add another condition: if the robots don't visit the specific S{t}, then
+% the sum of the xijks in S{t} must be 0. Use an if-else statement here to
+% implement it. HOW DO WE KNOW IF THE ROBOTS VISITED THE NODES IN THAT
+% SUBTOUR BEFORE RUNNING THE SUM?
+
+
+% Couple notes after working on it:
+
+% We do just want x >= 1. That's cause we want tour retracing, and if 
+% we force every subtour to have at least 2 different connections, we could
+% lose tours where a robot marches out to a city and then takes the same
+% route back (hence just have one retracing).
+
+
+%% Find a specific tour
+
+% Returns index of some specified tour in S
+%findSubtourInArray(S, [2 3 4 7])
 
 
 
@@ -202,7 +383,8 @@ constraint8 = [(numNodeTraversals >= 1)];
 
 % Complete constraints             
 constraints = [constraint1, constraint2, constraint3, constraint4, ...
-               constraint5, constraint6, constraint7, constraint8];
+               constraint5, constraint6, constraint8, ...
+               constraintSEC];
  
 % Objectives
 SalesmanDistances = [];
@@ -217,7 +399,7 @@ end
 objective1 = sum(SalesmanDistances); % Minimize total distance of all tours
 objective2 = max(SalesmanDistances); % Minimize max individual robot tour
 % Min weighted sum of max single robot tour and number of node revisits
-objective3 = max(SalesmanDistances) + 0.001*sum(numNodeTraversals);
+objective3 = max(SalesmanDistances) + 0.001*sum(sum(numNodeTraversals));
 
 
 %% Solve Original System
@@ -331,9 +513,9 @@ while(1)
                 % Or what we could do is just say, "if this solution
                 % satisfies the tether constraint, keep it and you're 
                 % done." Like this:
-                if ( sum(sum(RobotDistancesTwo(1:2,:) > tetherLength^2)) == 0  ||...
-                    sum(sum(RobotDistancesTwo([1,3],:) > tetherLength^2)) == 0  ||...
-                    sum(sum(RobotDistancesTwo([2,3],:) > tetherLength^2)) == 0 )
+                if ( sum(sum(RobotDistancesTwo(1:2,:) > tetherLength)) == 0  ||...
+                    sum(sum(RobotDistancesTwo([1,3],:) > tetherLength)) == 0  ||...
+                    sum(sum(RobotDistancesTwo([2,3],:) > tetherLength)) == 0 )
                 
                     flag = 1;
                 end
@@ -473,6 +655,38 @@ end
 
 
 %% Utility Functions
+
+
+% FIND A SUBTOUR IN A CELLARRAY
+% Inputs: set of sets (power set), desired tour
+% Outputs: index of desired tour in power set
+function [idx] = findSubtourInArray(powerSet, tour)
+    idx = 0;
+    for i = 1:numel(powerSet)
+        if sum(ismember(cell2mat(powerSet{i}), tour)) == numel(tour) ...
+                && numel(powerSet{i}) == numel(tour)
+            idx = i;
+        end
+    end
+end
+
+% By Paulo Abelha
+% Returns the powerset of set S
+% S is a cell array
+% P is a cell array of cell arrays
+function [ P ] = PowerSet( S )
+    n = numel(S);
+    x = 1:n;
+    P = cell(1,2^n);
+    p_ix = 2;
+    for nn = 1:n
+        a = combnk(x,nn);
+        for j=1:size(a,1)
+            P{p_ix} = S(a(j,:));
+            p_ix = p_ix + 1;
+        end
+    end
+end
 
 
 % DISTANCE FUNCTION
