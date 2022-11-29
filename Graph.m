@@ -1,4 +1,3 @@
-
 % Printing algorithm adapted from
 % https://www.geeksforgeeks.org/find-paths-given-source-destination/
 classdef Graph < handle 
@@ -43,6 +42,23 @@ classdef Graph < handle
             
         end
         
+        % Initialize the object's graph with an adjacency matrix. Different
+        % method as opposed to adding edges.
+        function self = loadAdjacencyMatrix(self, adjMatrix)
+            % Note that adjacency matrices must be square, so we can 
+            % take just its number of columns to be its number of rows as
+            % well:
+            N = length(adjMatrix(:,1));
+            for i = 1:N
+                for j = 1:N
+                    if (adjMatrix(i,j) == 1)
+                        self.addEdge(i,j);
+                    end
+                end
+            end
+            
+        end
+        
         % Recursive helper function used to actually print and store paths
         function [self] = printAllPathsUtil(self, currentNode, ...
                                           goalNode, path)
@@ -51,9 +67,11 @@ classdef Graph < handle
             self.m_visitedVertices(currentNode) = true;
             path = [path currentNode];
             if currentNode == goalNode
-                disp(path)
+                disp(path) % Comment this line to stop path printing
                 % Append completed path to cell array of all paths:
                 self.m_currentVertexPaths{end+1} = path;
+            % If current vertex is not the destination, recur for all
+            % vertices adjacent to this vertex
             else
                 for i = 1:length(self.m_graph(currentNode))
                     % We want to iterate over the vertices connected
@@ -68,6 +86,7 @@ classdef Graph < handle
                     end
                 end
             end
+            % Remove current vertex from path and mark it as unvisited
             path = path(1:end-1);
             self.m_visitedVertices(currentNode) = false;
             
@@ -82,7 +101,7 @@ classdef Graph < handle
             % to actually find paths (not store them like currentVertexPaths):
             path = [];
             % Call the recursive helper function to print all paths:
-            self.printAllPathsUtil(vertex1, vertex2, path)
+            self.printAllPathsUtil(vertex1, vertex2, path);
             
         end  
     end

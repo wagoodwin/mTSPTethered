@@ -59,7 +59,7 @@ V0 = {1,2,3,4,5,6,7,8,9,10,11}; % set of nodes that includes dummy node
 % included in objective function. Traversal: any entrance or exit
 numNodeTraversals = sdpvar(numOfCities, numOfRobots, 'full');
 
-x = binvar(numOfCities, numOfCities, numOfRobots, 'full');
+x = intvar(numOfCities, numOfCities, numOfRobots, 'full');
 u = sdpvar(numOfCities, 1, 'full');
 p = numOfCities - numOfRobots;
 
@@ -219,6 +219,8 @@ end
 % We use sum so the number of node traversals is at least 1 for at least
 % one robot. I.e., you could have [1 0 0] [0 1 0] or [0 2 1] but NOT [0 0 0]
 constraint8 = [(sum(numNodeTraversals,2) >= 1)];
+
+
 
 
 %% Dantzig-Fulkerson-Johnson Subtour Elminination Constraint
@@ -381,9 +383,16 @@ end
 
 %% Final constraints and objectives
 
+% Constraint on x: must be greater than or equal to 0 (so we don't get 
+% negative integers) and less than some upper bound M
+M = 3;
+constraintx = [(x >= 0), (x <= M)];
+% So we're saying that we don't want the robots to visit a city more than
+% M (3) times for all cities.
+
 % Complete constraints             
 constraints = [constraint1, constraint2, constraint3, constraint4, ...
-               constraint5, constraint6, constraint8, ...
+               constraint5, constraint6, constraint8, constraintx ...
                constraintSEC];
  
 % Objectives
