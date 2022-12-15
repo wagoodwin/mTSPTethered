@@ -56,10 +56,34 @@ paths = graph2.printAllPaths(3,4);
 % If you want to access each path:
 allPaths = graph2.m_visitedRoutes;
 
-% The algorithm works with self-loop too. Can show 
 
 
-% Make sure the loop can start and end at the same point MUST FIX!!!
+
+% Here's an example of the algorithm working with a real adjacency matrix.
+
+% test =     [0     1     0     0     0     0     0     0     0     0   0;
+%             1     0     0     0     0     0     0     1     0     0   0;
+%             0     0     0     1     0     0     0     1     0     0   0;
+%             0     0     1     0     1     0     0     0     0     0   0;
+%             0     0     0     1     0     0     0     0     0     0   0;
+%             0     0     0     0     0     0     0     0     0     0   0;
+%             0     0     0     0     0     0     0     0     0     0   0;
+%             0     1     1     0     0     0     0     0     0     0   0;
+%             0     0     0     0     0     0     0     0     0     0   0;
+%             0     0     0     0     0     0     0     0     0     0   0;
+%             0     0     0     0     0     0     0     0     0     0   0];
+% 
+% numVertices = numel(test(:,1));
+% graph2Mtsp = Graph2(numVertices);
+% graph2Mtsp.loadAdjacencyMatrix(test);
+% 
+% paths2 = graph2Mtsp.printAllPaths(1,1);
+
+% This adjacency matrix doesn't have any repeat paths, but as an easy
+% demo, put a 2 at the (1,1) spot of the matrix and run the sim again. 
+
+%% test
+
 
 %% Notes
 
