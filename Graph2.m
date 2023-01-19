@@ -79,18 +79,16 @@ classdef Graph2 < handle
             % Store the current node in the path:
             path = [path self.m_currentNearestVertex];
 
+            % "For all nodes adjacent to the end of the path"
             for i = 1:length(self.m_graph(path(end)))
                 
+                % Note that before these lines execute, the current nearest
+                % vertex and end of the path are the same. After these 
+                % lines execute, they won't necessarily be the same. 
                 temp = self.m_graph(path(end));
                 self.m_currentNearestVertex = temp(i);
                 
                 routeBool = isCurrentRouteInVisitedRoutes(self.m_visitedRoutes, path);
-            
-                % If the list of visited routes is empty (like at
-                % initialization), just set the status equal to false:
-                if( isempty(self.m_visitedRoutes(1:end-1)) == true)
-                    routeBool = false;
-                end
                 
                 % If we're at the goal node AND we haven't stored this route
                 % yet, DO THIS:
@@ -133,29 +131,25 @@ classdef Graph2 < handle
                     % doesn't exist (go to next iteration in for
                     % loop)
                     continue;
-                end
-                % Note that we only enter the loop if currentRoute
-                % has more than one value. If it only has one
-                % value (like at initialization), it hasn't taken
-                % an edge yet, so the adjacency matrix doesn't need
-                % to be decremented.
 
-                % If the adj matrix is looking good (still have an
+                % Otherwise, if the adj matrix looks good (still have an
                 % edge we can use), subtract 1 at the corresponding
                 % edge on the adj matrix,
+                else
+                    self.m_adjMatrix(path(end), self.m_currentNearestVertex) = ...
+                        self.m_adjMatrix(path(end), ...
+                        self.m_currentNearestVertex) - 1;
 
-                self.m_adjMatrix(path(end), self.m_currentNearestVertex) = ...
-                    self.m_adjMatrix(path(end), ...
-                    self.m_currentNearestVertex) - 1;
+                    % add that route to array of visited routes. Technically,
+                    % we haven't visited this route yet. We're putting it in
+                    % preemptively. 
+                    self.m_visitedRoutes{self.m_routeNumber}{end+1} = ...
+                        self.m_currentNearestVertex;
 
-                % add that route to array of visited routes. Technically,
-                % we haven't visited this route yet. We're putting it in
-                % preemptively. 
-                self.m_visitedRoutes{self.m_routeNumber}{end+1} = ...
-                    self.m_currentNearestVertex;
-
-                % And finally, jump into the next recursion:
-                self.printAllPathsUtil(goalNode, path);
+                    % And finally, jump into the next recursion:
+                    self.printAllPathsUtil(goalNode, path);
+                end
+                
             end
             % Quick check: if the path has only one value, and that value
             % is the home node, it means we've exhausted all possible
@@ -197,7 +191,8 @@ classdef Graph2 < handle
             % Add route back to adjacency matrix,
             self.m_adjMatrix(path(end-1),path(end)) = ...
                 self.m_adjMatrix(path(end-1), path(end)) + 1;
-            % Remove current vertex from path
+            % Remove current vertex from path. Why? Since we just got out
+            % of a recursion here, we need to back up one vertex.
             path = path(1:end-1);
             % Remove from visited routes:
             self.m_visitedRoutes{self.m_routeNumber}(end) = [];

@@ -34,6 +34,7 @@ yalmip('clear');
 
 % If flagIterative == 1, the iterative method will run. Otherwise, only the
 % original simulation will run.
+flagIterativeNew = 1;
 flagIterative = 0;
 % If flagTether == 1, the plotting tool will include tethers. 
 flagTether = 0;
@@ -47,7 +48,7 @@ tetherLength = 60;
 % Distance value used for dummy node creation. Ensures that our 'zeroth'
 % node has zero cost from 0 to node 1 but doesn't go to other nodes
 % during optimization.
-M = 10e10; % Tried M = inf, but YALMIP poops itself.
+M = 10e3; % Tried M = inf, but YALMIP poops itself.
 
 % Set that represents all nodes but the first. Used for generating a set of
 % all possible subtours with Dantzig-Fulkerson-Johsnon (DFJ) subtour
@@ -78,8 +79,8 @@ for i = 1:numOfCities-1
 end
 
 C = real(C);
-C = C.^2; % We're using the sum of squared distances (SSD) as opposed 
-% to the raw 2-norm to stay consistent between the two approaches
+% C = C.^2; % We're using the sum of squared distances (SSD) as opposed 
+% % to the raw 2-norm to stay consistent between the two approaches
 
 % Reformat the cost matrix to have a dummy node:
 temp = zeros(numOfCities+1, numOfCities+1);
@@ -221,8 +222,6 @@ end
 constraint8 = [(sum(numNodeTraversals,2) >= 1)];
 
 
-
-
 %% Dantzig-Fulkerson-Johnson Subtour Elminination Constraint
 
 % We want to outrule every possible subtour. For a 10-city system,
@@ -333,11 +332,7 @@ for k = 1:numOfRobots
         % If the robot IS in the set, then bin(t,k) is 1, so the
         % constraints with xijkSum3 are made. These constraints force the robot,
         % when it's in the set, to enter at least once, exit at least once,
-        % and have a number of entrances and exits equal to each other. 
-        
-        % We don't need to enforce that the robots enter and exit at least
-        % once here, actually, because we've already included that 
-        % constraint earlier. UPDATE: MAYBE WE DO
+        % and have a number of entrances and exits equal to each other.
         constraintSEC = [constraintSEC, implies(bin(t,k), ... 
             [(xijkSum >=1), (xijkSum2 >= 1), (xijkSum == xijkSum2) ])];
         % If the robot is NOT in the set, ensure that the number of
@@ -347,6 +342,9 @@ for k = 1:numOfRobots
         xijkSum = 0;
         xijkSum2 = 0;
         xijkSum3 = 0;
+        % Note where these constraints are in this series of loops.
+        % We want the constraints to be made for each robot
+        % and each subtour. 
     end
 end
 
@@ -372,13 +370,6 @@ end
 % we force every subtour to have at least 2 different connections, we could
 % lose tours where a robot marches out to a city and then takes the same
 % route back (hence just have one retracing).
-
-
-%% Find a specific tour
-
-% Returns index of some specified tour in S
-%findSubtourInArray(S, [2 3 4 7])
-
 
 
 %% Final constraints and objectives
@@ -426,6 +417,123 @@ if (flagIterative == 0)
 %         getAllRobotTourInfo(C, numOfCities, numOfRobots, value(x2));
 end
 
+%% testing
+
+routeMatrix = []; 
+flag = 0;
+
+if (flagIterativeNew == 1)
+    tic
+    while(1)
+        % run simulation
+        clc
+        options = sdpsettings('verbose',0,'solver','Gurobi');
+        sol = optimize(constraints,objective3,options);
+        sol.problem;
+        value(objective3);
+        value(x);
+
+        adjMatrices = value(x);
+
+        robot1Graph = Graph2(numOfCities);
+        robot2Graph = Graph2(numOfCities);
+        robot3Graph = Graph2(numOfCities);
+
+        robot1Graph.loadAdjacencyMatrix(adjMatrices(:,:,1));
+        robot2Graph.loadAdjacencyMatrix(adjMatrices(:,:,2));
+        robot3Graph.loadAdjacencyMatrix(adjMatrices(:,:,3));
+
+        robot1Graph.printAllPaths(1,1);
+        robot2Graph.printAllPaths(1,1);
+        robot3Graph.printAllPaths(1,1);
+
+        robot1Paths = robot1Graph.m_visitedRoutes;
+        robot2Paths = robot2Graph.m_visitedRoutes;
+        robot3Paths = robot3Graph.m_visitedRoutes;
+
+        temp1 = robot1Paths;
+        for i = 1:numel(robot1Paths)
+        robot1Paths{i} = cell2mat(temp1{i});
+        end
+        robot1Paths = robot1Paths';
+        [~,yolo] = sort(cellfun(@length,robot1Paths));
+        robot1Paths = robot1Paths(yolo);
+
+        temp2 = robot2Paths;
+        for i = 1:numel(robot2Paths)
+        robot2Paths{i} = cell2mat(temp2{i});
+        end
+        robot2Paths = robot2Paths';
+        [~,yolo] = sort(cellfun(@length,robot2Paths));
+        robot2Paths = robot2Paths(yolo);
+
+        temp3 = robot3Paths;
+        for i = 1:numel(robot3Paths)
+        robot3Paths{i} = cell2mat(temp3{i});
+        end
+        robot3Paths = robot3Paths';
+        [~,yolo] = sort(cellfun(@length,robot3Paths));
+        robot3Paths = robot3Paths(yolo);
+
+        for i = 1:numel(robot1Paths)
+            if flag == 1
+                break
+            end
+            for j = 1:numel(robot2Paths)
+                if flag == 1
+                    break
+                end
+                for k = 1:numel(robot3Paths)
+                if flag == 1
+                    break
+                end
+
+                    % Attempt to concatenate the paths from each robot into a 
+                    % matrix. If that doesn't work, skip to the next iteration:
+                    try
+                        routeMatrix = [robot1Paths{i}; robot2Paths{j}; ...
+                                       robot3Paths{k}];     
+                    catch
+                        disp('Tour lengths mismatch. skipping this iteration...')
+                        continue
+                    end
+
+                    % Now, begin checks that every city has been visited in this
+                    % chosen set of tours:
+
+                    % ASSERT that the number unique elements among the set is not
+                    % greater than the number of cities (impossible)
+                    assert(numel(unique(routeMatrix)) <= numOfCities, ...
+                        'routeMatrix has more unique elements (cities) than' ...
+                        ,'the number of unique cities (impossible).')
+
+                    % If the number of unique cities visited is less than the 
+                    % total number of cities, then we didn't visit every city, so
+                    % skip this iteration.
+                    if(numel(unique(routeMatrix)) < numOfCities)
+                        continue
+                    end
+
+                    % Now, assemble a matrix of distances between the robots'
+                    % tours:
+                    distanceMatrix = getOnlyDistances(routeMatrix,C);
+
+                    % Finally, check the inter-city distances. Can maybe do it 
+                    % similarly to before. If they're all less than the tether
+                    % length, we're good, and we can exit.
+                    if( sum(sum(distanceMatrix <= tetherLength)) == 0)
+                        flag = 1; 
+                    end
+
+                end
+            end
+        end
+        % Hit this break when we're out of all loops. We get out of all
+        % loops when we find a set of tours that works. 
+        break
+    end
+    toc
+end
 
 %% Adding Tether Constraints Iteratively-- Getting the New System
 
@@ -634,28 +742,28 @@ end
 % but the project will involve only a low number of robots anyway, so 
 % no problem.
 
-figure(1)
-box on
-plotRoute(nodecoords, RobotRowIdxs(1,:,1) , RobotColIdxs(1,:,1), 'red')
-hold on
-plotRoute(nodecoords, RobotRowIdxs(1,:,2) , RobotColIdxs(1,:,2), 'magenta')
-plotRoute(nodecoords, RobotRowIdxs(1,:,3) , RobotColIdxs(1,:,3), 'blue')
-
-% 1,2,3 specifcy the two robots with which you want the tethers drawn
-if (flagTether == 1)
-    
-    % Another thing we'll need to do: we'll need to determine how to
-    % automatically draw the correct tethers between the robots. This task
-    % shouldn't be too hard once we figure out how to generalize the algo
-    % to any number of robots.
-    
-    plotTethers(nodecoords, RobotRowIdxs, ...
-        RobotColIdxs, 1, 2, 'black', '--')
-    plotTethers(nodecoords, RobotRowIdxs, ...
-        RobotColIdxs, 2, 3, 'black', ':' )
-    hold off
-    
-end
+% figure(1)
+% box on
+% plotRoute(nodecoords, RobotRowIdxs(1,:,1) , RobotColIdxs(1,:,1), 'red')
+% hold on
+% plotRoute(nodecoords, RobotRowIdxs(1,:,2) , RobotColIdxs(1,:,2), 'magenta')
+% plotRoute(nodecoords, RobotRowIdxs(1,:,3) , RobotColIdxs(1,:,3), 'blue')
+% 
+% % 1,2,3 specifcy the two robots with which you want the tethers drawn
+% if (flagTether == 1)
+%     
+%     % Another thing we'll need to do: we'll need to determine how to
+%     % automatically draw the correct tethers between the robots. This task
+%     % shouldn't be too hard once we figure out how to generalize the algo
+%     % to any number of robots.
+%     
+%     plotTethers(nodecoords, RobotRowIdxs, ...
+%         RobotColIdxs, 1, 2, 'black', '--')
+%     plotTethers(nodecoords, RobotRowIdxs, ...
+%         RobotColIdxs, 2, 3, 'black', ':' )
+%     hold off
+%     
+% end
 
 % Save the plot onto your computer:
 % ax = gca
@@ -664,7 +772,6 @@ end
 
 
 %% Utility Functions
-
 
 % FIND A SUBTOUR IN A CELLARRAY
 % Inputs: set of sets (power set), desired tour
@@ -712,35 +819,63 @@ end
 
 
 % GET ONLY ROBOT DISTANCES
-function [RobotDistancesTwo] = getOnlyDistances(RobotColIdxs,C)
+% function [RobotDistancesTwo] = getOnlyDistances(RobotColIdxs,C)
+% 
+%     distanceTwoRobots = [];
+%     for i = 1:length(RobotColIdxs(1,:,1))
+%         distanceTwoRobots = [distanceTwoRobots, ...
+%             C(RobotColIdxs(1,i,1), RobotColIdxs(1,i,2))];
+%     end
+%     RobotDistancesTwo(1,:) = distanceTwoRobots;
+% %     display(RobotDistancesTwo);
+%     
+%     
+%     distanceTwoRobots = [];
+%     for i = 1:length(RobotColIdxs(1,:,1))
+%         distanceTwoRobots = [distanceTwoRobots, ...
+%             C(RobotColIdxs(1,i,1), RobotColIdxs(1,i,3))];
+%     end
+%     RobotDistancesTwo(2,:) = distanceTwoRobots;
+% %     display(RobotDistancesTwo);
+%     
+%     
+%     distanceTwoRobots = [];
+%     for i = 1:length(RobotColIdxs(1,:,2))
+%         distanceTwoRobots = [distanceTwoRobots, ...
+%             C(RobotColIdxs(1,i,2), RobotColIdxs(1,i,3))];
+%     end
+%     RobotDistancesTwo(3,:) = distanceTwoRobots;
+% %     display(RobotDistancesTwo);
+% 
+% end
 
-    distanceTwoRobots = [];
-    for i = 1:length(RobotColIdxs(1,:,1))
-        distanceTwoRobots = [distanceTwoRobots, ...
-            C(RobotColIdxs(1,i,1), RobotColIdxs(1,i,2))];
-    end
-    RobotDistancesTwo(1,:) = distanceTwoRobots;
-%     display(RobotDistancesTwo);
-    
-    
-    distanceTwoRobots = [];
-    for i = 1:length(RobotColIdxs(1,:,1))
-        distanceTwoRobots = [distanceTwoRobots, ...
-            C(RobotColIdxs(1,i,1), RobotColIdxs(1,i,3))];
-    end
-    RobotDistancesTwo(2,:) = distanceTwoRobots;
-%     display(RobotDistancesTwo);
-    
-    
-    distanceTwoRobots = [];
-    for i = 1:length(RobotColIdxs(1,:,2))
-        distanceTwoRobots = [distanceTwoRobots, ...
-            C(RobotColIdxs(1,i,2), RobotColIdxs(1,i,3))];
-    end
-    RobotDistancesTwo(3,:) = distanceTwoRobots;
-%     display(RobotDistancesTwo);
+% Updated version for updated Iterative Method:
+function [distanceMatrix] = getOnlyDistances(routeMatrix, C)
 
+    distanceR1R2 = [];
+    for i = 1:length(routeMatrix(1,:))
+        distanceR1R2 = [distanceR1R2, ...
+            C(routeMatrix(1,i), routeMatrix(2,i))];
+    end
+    
+    distanceR2R3 = [];
+    for i = 1:length(routeMatrix(2,:))
+        distanceR2R3 = [distanceR2R3, ...
+            C(routeMatrix(2,i), routeMatrix(3,i))];
+    end
+    
+    distanceR1R3 = [];
+    for i = 1:length(routeMatrix(3,:))
+        distanceR1R3 = [distanceR1R3, ...
+            C(routeMatrix(1,i), routeMatrix(3,i))];
+    end
+    
+    distanceMatrix = [distanceR1R2; distanceR2R3; distanceR1R3];
+
+    
 end
+
+
 
 % GET ALL TOUR COMBINATIONS
 function [finalTourOneCombos, finalTourTwoCombos, ...

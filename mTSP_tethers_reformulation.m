@@ -21,7 +21,7 @@
 
 
 clc; 
-clear all;
+clearvars;
 close all;
 yalmip('clear');
 
@@ -242,6 +242,7 @@ for k = 1:numOfRobots
             temp = temp + ...
             sum((robotLocation{k}(i-1,:)-robotLocation{k}(i,:)).^2);            
         end
+        
         
     end
     robotDistTraveled = [robotDistTraveled; temp];

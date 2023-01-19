@@ -46,14 +46,14 @@ clearvars;
 
 graph2 = Graph2(4);
 
-adjMatrix = [0 1 2 1; 0 0 0 1; 2 1 0 0; 0 0 0 0];
+adjMatrix = [0 1 2 1; 0 0 0 1; 2 1 1 0; 0 0 0 0];
 
 graph2.loadAdjacencyMatrix(adjMatrix);
 
 paths = graph2.printAllPaths(3,3);
 
 
-% If you want to access each path:
+% To access each path:
 allPaths = graph2.m_visitedRoutes;
 
 
@@ -61,7 +61,7 @@ allPaths = graph2.m_visitedRoutes;
 
 % Here's an example of the algorithm working with a real adjacency matrix.
 
-% test =     [0     1     0     0     0     0     0     0     0     0   0;
+% matrix =   [0     1     0     0     0     0     0     0     0     0   0;
 %             1     0     0     0     0     0     0     1     0     0   0;
 %             0     0     0     1     0     0     0     1     0     0   0;
 %             0     0     1     0     1     0     0     0     0     0   0;
@@ -73,9 +73,9 @@ allPaths = graph2.m_visitedRoutes;
 %             0     0     0     0     0     0     0     0     0     0   0;
 %             0     0     0     0     0     0     0     0     0     0   0];
 % 
-% numVertices = numel(test(:,1));
+% numVertices = numel(matrix(:,1));
 % graph2Mtsp = Graph2(numVertices);
-% graph2Mtsp.loadAdjacencyMatrix(test);
+% graph2Mtsp.loadAdjacencyMatrix(matrix);
 % 
 % paths2 = graph2Mtsp.printAllPaths(1,1);
 
