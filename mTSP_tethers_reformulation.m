@@ -26,7 +26,7 @@ close all;
 yalmip('clear');
 
 
-flagNorm = "2-norm Squared"; % options: "1-norm" or "2-norm Squared"
+flagNorm = "2-norm"; % options: "1-norm", "2-norm Squared", "2-norm"
 flagTether = "Tethered"; % options: "Tethered" or "Untethered"
 
 
@@ -36,7 +36,7 @@ numOfTimeSteps = 8; % corresponds to i
 numOfCities = 10; % corresponds to j
 numOfRobots = 3; % corresponds to k
 
-tetherLength = 60;
+tetherLength = 70;
 
 % Truncated eil51 node coords further to just 5 cities
 % nodecoords = load('ToyProblemNodeCoords.txt');
@@ -54,7 +54,8 @@ for i = 1:numOfCities
             nodecoords(j,2), nodecoords(j,3));
         end
         
-        if ( (strcmp(flagNorm,"2-norm Squared") == 1) )
+        if ( (strcmp(flagNorm,"2-norm Squared") == 1) || ...
+                (strcmp(flagNorm,"2-norm") == 1) )
              C(i,j) = distance(nodecoords(i,2), nodecoords(i,3), ...
              nodecoords(j,2), nodecoords(j,3));
         end
@@ -209,14 +210,21 @@ for k=2:numOfRobots
                 
         if (strcmp(flagNorm,"1-norm") == 1)  
             temp = [temp; ...
-            sum(abs(robotLocation{k-1}(i,:)-robotLocation{k}(i,:)))];
+                    norm( (robotLocation{k-1}(i,:)-robotLocation{k}(i,:)),1) ];
+%                     sum(abs(robotLocation{k-1}(i,:)-robotLocation{k}(i,:)))];
         end
         
         if (strcmp(flagNorm,"2-norm Squared") == 1)
             temp = [temp; ...
-            sum((robotLocation{k-1}(i,:)-robotLocation{k}(i,:)).^2)]; 
+            (norm( (robotLocation{k-1}(i,:)-robotLocation{k}(i,:)),2))^2 ];
+%             sum((robotLocation{k-1}(i,:)-robotLocation{k}(i,:)).^2)]; 
         end
         
+        if (strcmp(flagNorm,"2-norm") == 1)
+            temp = [temp; ...
+                    norm( (robotLocation{k-1}(i,:)-robotLocation{k}(i,:)),2) ];
+%                               sqrt(sum((robotLocation{k-1}(i,:)-robotLocation{k}(i,:)).^2)) ];
+        end
     end
     robotDistances = [robotDistances, temp];
     temp = [];
@@ -225,7 +233,7 @@ end
 
 
 
-% Now build the objective function variable:  
+% Now build the objective function variable:
 for k = 1:numOfRobots
     temp = 0;
     for i = 2:numOfTimeSteps
@@ -234,8 +242,8 @@ for k = 1:numOfRobots
         if (strcmp(flagNorm,"1-norm") == 1) 
             temp = temp + ...
             sum(abs(robotLocation{k}(i-1,:)-robotLocation{k}(i,:)));
+%             norm( (robotLocation{k}(i-1,:)-robotLocation{k}(i,:)),1 );
         end
-        
         
         % squared two-norm implementation
         if (strcmp(flagNorm,"2-norm Squared") == 1)
@@ -243,6 +251,16 @@ for k = 1:numOfRobots
             sum((robotLocation{k}(i-1,:)-robotLocation{k}(i,:)).^2);            
         end
         
+        % squared two-norm implementation
+        if (strcmp(flagNorm,"2-norm") == 1)
+            temp = temp + ...
+                              norm( (robotLocation{k}(i-1,:)-robotLocation{k}(i,:)),2 );
+%                               sqrt(sum((robotLocation{k}(i-1,:)-robotLocation{k}(i,:)).^2));
+
+
+
+
+        end
         
     end
     robotDistTraveled = [robotDistTraveled; temp];
@@ -254,16 +272,15 @@ end
 for i = 1:numOfTimeSteps
     for j = 1:(numOfRobots-1)
         
-        if (strcmp(flagNorm,"2-norm Squared") == 1)      
-            tetherConstraints = [tetherConstraints, ...
-            (robotDistances(i,j) <= tetherLength^2)];
-        end
-        
-        if (strcmp(flagNorm,"1-norm") == 1)
+        if (strcmp(flagNorm,"1-norm") == 1 || strcmp(flagNorm,"2-norm") == 1)
             tetherConstraints = [tetherConstraints, ...
             (robotDistances(i,j) <= tetherLength)];     
         end
         
+        if (strcmp(flagNorm,"2-norm Squared") == 1)      
+            tetherConstraints = [tetherConstraints, ...
+            (robotDistances(i,j) <= tetherLength^2)];
+        end
         
     end
 end
@@ -302,7 +319,7 @@ end
 tic;
 sol = optimize(constraints,objectiveMinMax);
 sol.info;
-toc;
+totTime = toc
 
 % get total distance traveled by all robots:
 totalDistanceSum = 0;
@@ -326,6 +343,7 @@ end
 totalDistanceInd
 
 %% Plotting
+clc; clear gca;
 
 figure(1)
 
@@ -364,11 +382,26 @@ hold off
 % robot is which in the formulation. We could've done 1T2 and 2T3, and 
 % we would get the same result.
 
-% For saving the figure locally:
-% ax = gca
-% exportgraphics(ax, ...
-%     '/home/walter/Desktop/ThesisFigures/Timing_Untethered_1norm.jpg', 'Resolution', '1000')
-% 
+% Bold latex axes from this source:
+% https://www.mathworks.com/matlabcentral
+% /answers/406685-ticklabelinterpreter-axis-ticks-bold
+
+
+% Set text interpreter to Latex and save figure:
+set(0,'defaulttextinterpreter','latex');
+
+axes = gca;
+
+axes.XAxis.TickLabelInterpreter = 'latex';
+axes.XAxis.TickLabelFormat  = '\\textbf{%g}';
+
+axes.YAxis.TickLabelInterpreter = 'latex';
+axes.YAxis.TickLabelFormat = '\\textbf{%g}';
+
+exportgraphics(axes, ...
+    '/home/walter/Desktop/ThesisFigures/Timed/Tether70/Timing_70teth_2norm.jpg', ...
+    'Resolution', '1000')
+
 
 %% Utility Functions
 
@@ -452,13 +485,19 @@ function[] = plotRoute(nodecoords, xBinvar, ...
         pause(0.1);
         drawnow
     end
+
+    % No title for IROS paper
+%     title("Robot Tours: Timing Formulation, " + ...
+%         num2str(flagTether) + ", " + num2str(flagNorm));
+
+    xlabel("\textbf{$$\mathbf{x}$$ distance (arbitrary units)}", ...
+        'fontweight','bold','FontSize',16);
+    ylabel("\textbf{$$\mathbf{y}$$ distance (arbitrary units)}",'fontweight', ...
+        'bold','FontSize',16);
     
-%     title("Robot Tours: 60 Unit Tether, MinMax Objective");
-%     title("Robot Tours: 70 Unit Tether, MinSum Objective, 1-norm");
-    title("Robot Tours: Timing Formulation, " + ...
-        num2str(flagTether) + ", " + num2str(flagNorm));
-    xlabel("x distance (arbitrary units)");
-    ylabel("y distance (arbitrary units)");
+    delta = 5;
+    xlim([min(nodecoords(:,2))-delta,max(nodecoords(:,2))+delta])
+    ylim([min(nodecoords(:,3))-delta/3,max(nodecoords(:,3))+delta/3])
 
 
 end

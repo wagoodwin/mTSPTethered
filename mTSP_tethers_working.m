@@ -41,16 +41,22 @@ yalmip('clear');
 
 % If flagIterative == 1, the iterative method will run. Otherwise, only the
 % original simulation will run.
-flagIterative = 1;
+flagIterative = 0;
 % If flagTether == 1, the sim will run while incorporating tether
 % constraints.
-flagTether = 1;
-% One more thing to add: a flag to designate what kind of norm we're using
+flagTether = 0;
+if flagIterative == 1
+    flagTether = 1;
+end
 
+% TODO: CONSOLIDATE FLAGITERATIVE AND FLAGTETHER INTO ONE FLAG
+
+% One more thing to add: a flag to designate what kind of norm we're using
+flagNorm = "two"; % OPTIONS: "two-squared", "one", "two"
 
 numOfRobots = 3;
 numOfCities = 10;
-tetherLength = 60;
+tetherLength = 70;
 
 % Truncated eil51 node coords further to just 5 cities
 % nodecoords = load('ToyProblemNodeCoords.txt');
@@ -60,15 +66,27 @@ nodecoords = nodecoords(1:numOfCities,:);
 C = zeros(numOfCities);
 
 for i = 1:numOfCities
-    for j = 1:numOfCities   
-        C(i,j) = distance(nodecoords(i,2), nodecoords(i,3), ...
+    for j = 1:numOfCities
+        if(strcmp(flagNorm,"one") == 1)
+           C(i,j) = distance1(nodecoords(i,2), nodecoords(i,3), ...
            nodecoords(j,2), nodecoords(j,3));
+        end
+        
+        if(strcmp(flagNorm,"two") == 1 || ...
+                strcmp(flagNorm,"two-squared") == 1)
+            C(i,j) = distance(nodecoords(i,2), nodecoords(i,3), ...
+            nodecoords(j,2), nodecoords(j,3));
+        end
+
     end
 end
 
 C = real(C);
-C = C.^2; % We're using the sum of squared distances (SSD) as opposed 
-% to the raw 2-norm to stay consistent between the two approaches
+if(strcmp(flagNorm,"two-squared") == 1)
+    C = C.^2; % We're using the sum of squared distances (SSD) as opposed 
+    % to the raw 2-norm to stay consistent between the two approaches
+end
+
 
 
 %% mTSP constraints
@@ -333,15 +351,26 @@ while(1)
                 % tours
                 [RobotDistancesTwo] = ...
                 getOnlyDistances(newColIdxs,C);
+            
+                if(flagNorm == "two-squared")
+                    % Or what we could do is just say, "if this solution
+                    % satisfies the tether constraint, keep it and you're 
+                    % done." Like this:
+                    if ( sum(sum(RobotDistancesTwo(1:2,:) > tetherLength^2)) == 0  ||...
+                        sum(sum(RobotDistancesTwo([1,3],:) > tetherLength^2)) == 0  ||...
+                        sum(sum(RobotDistancesTwo([2,3],:) > tetherLength^2)) == 0 )
+
+                        flag = 1;
+                    end 
+                end
                 
-                % Or what we could do is just say, "if this solution
-                % satisfies the tether constraint, keep it and you're 
-                % done." Like this:
-                if ( sum(sum(RobotDistancesTwo(1:2,:) > tetherLength^2)) == 0  ||...
-                    sum(sum(RobotDistancesTwo([1,3],:) > tetherLength^2)) == 0  ||...
-                    sum(sum(RobotDistancesTwo([2,3],:) > tetherLength^2)) == 0 )
-                
-                    flag = 1;
+                if(flagNorm == "two" || flagNorm == "one")
+                    if ( sum(sum(RobotDistancesTwo(1:2,:) > tetherLength)) == 0  ||...
+                        sum(sum(RobotDistancesTwo([1,3],:) > tetherLength)) == 0  ||...
+                        sum(sum(RobotDistancesTwo([2,3],:) > tetherLength)) == 0 )
+
+                        flag = 1;
+                    end 
                 end
                 
                 % if the solution doesn't violate the constraint, break
@@ -380,9 +409,20 @@ while(1)
         % length, exclude that specific solution and rerun.
         
     if flag == 0
-        for k = 1:numOfRobots
-             constraints_2 = [constraints_2, exclude(x2(:,:,k), ...
-             value(x2(:,:,k)))];
+        
+        % solution binvar sometimes is cast into an sdpvar somehow. In
+        % that case, exclude the value with the second method shown in the
+        % catch block:
+        try 
+            for k = 1:numOfRobots
+                 constraints_2 = [constraints_2, exclude(x2(:,:,k), ...
+                 value(x2(:,:,k)))];
+            end
+        catch
+            for ii = 1:numOfRobots
+                constraints_2 = [constraints_2, ...
+                               (x2(:,:,ii) ~= value(x2(:,:,ii))) ];
+            end
         end
         
     else
@@ -417,29 +457,6 @@ end
 %
 
 
-%% Notes
-
-% Another point: there could be multiple solutions that fulfill the 
-% tether length constraint. In that case, we'd need to be able to 
-% show all of those solutions.
-
-% Then, we'd want to add a condition that stops the loop if the 
-% the same solution has been found twice. If the same solution has
-% been found twice, then that means the computer can't narrow down the
-% correct solution, so the loop should stop. If the computer had narrowed
-% down the correct solution, the loop woudl've stopped after finding 
-% the solution the first time.
-
-% UPDATE: if you run the loop long enough, you end up getting a weird
-% error where the robots no longer go to all of the cities. Discuss this
-% incident with Yong. It's possible that this kind of error just means
-% there aren't any solutions left at all, let alone solutions that 
-% satisfy the constraint. That is, we excluded so many solutions that 
-% we just ran out of stuff that works. As such, the move here might to break
-% out of the loop if the error happens or if colIdxs and colIdxs2 no 
-% longer show that the robots are visiting all 10 cities.
-
-
 %% Plotting 
 
 % We want to visualize the paths of the robots. We could
@@ -451,10 +468,13 @@ end
 
 figure(1)
 box on
-plotRoute(nodecoords, RobotRowIdxs(1,:,1) , RobotColIdxs(1,:,1), 'red')
+plotRoute(nodecoords, RobotRowIdxs(1,:,1) , RobotColIdxs(1,:,1), ...
+    'red', flagNorm, flagTether)
 hold on
-plotRoute(nodecoords, RobotRowIdxs(1,:,2) , RobotColIdxs(1,:,2), 'magenta')
-plotRoute(nodecoords, RobotRowIdxs(1,:,3) , RobotColIdxs(1,:,3), 'blue')
+plotRoute(nodecoords, RobotRowIdxs(1,:,2) , RobotColIdxs(1,:,2), ...
+    'magenta', flagNorm, flagTether)
+plotRoute(nodecoords, RobotRowIdxs(1,:,3) , RobotColIdxs(1,:,3), ...
+    'blue', flagNorm, flagTether)
 
 % 1,2,3 specifcy the two robots with which you want the tethers drawn
 if (flagTether == 1)
@@ -472,10 +492,21 @@ if (flagTether == 1)
     
 end
 
-% Save the plot onto your computer:
-% ax = gca
-% exportgraphics(ax, ...
-%     '/home/walter/Desktop/ThesisFigures/mTSPTethered2_normSquared.jpg', 'Resolution', '1000')
+
+% Set text and axes to LaTeX-interpreted characters, and assign current,
+% and save plot onto computer:
+set(0,'defaulttextinterpreter','latex');
+
+axes = gca;
+
+axes.XAxis.TickLabelInterpreter = 'latex';
+axes.XAxis.TickLabelFormat  = '\\textbf{%g}';
+
+axes.YAxis.TickLabelInterpreter = 'latex';
+axes.YAxis.TickLabelFormat = '\\textbf{%g}';
+
+exportgraphics(gca, ...
+    '/home/walter/Desktop/ThesisFigures/Naive/Tether70/naive_unteth_2.jpg', 'Resolution', '1000')
 
 
 %% Utility Functions
@@ -487,12 +518,10 @@ function [d] = distance(x1,y1,x2,y2)
     d = sqrt( (y2 - y1)^2 + (x2 - x1)^2 );
 end
 
-
 % Finds the 1-norm between two points
 function [d1] = distance1(x1,y1,x2,y2)
     d1 = abs(x2 - x1) + abs(y2 - y1);
 end
-
 
 % GET ONLY ROBOT DISTANCES
 function [RobotDistancesTwo] = getOnlyDistances(RobotColIdxs,C)
@@ -844,7 +873,8 @@ end
 % PLOTTING FUNCTION
 
 % nothing to return here
-function[] = plotRoute(nodecoords, rowIndex, colIndex, color) 
+function[] = plotRoute(nodecoords, rowIndex, colIndex, color, ...
+    flagTether, flagNorm) 
 
     % first plot just the node coordinates by themselves. Code influenced
     % by the "I want to create a plot using XY coordintes" post on 
@@ -880,10 +910,19 @@ function[] = plotRoute(nodecoords, rowIndex, colIndex, color)
         drawnow
     end
     
-%     title("Robot Tours: 60 Unit Tether, MinMax Objective");
-    title("Robot Tours: mTSP Formulation, Tethered, 2-norm Squared");
-    xlabel("x distance (arbitrary units)");
-    ylabel("y distance (arbitrary units)");
+%     title("Robot Tours: Naive Method, Untethered, 1-norm");
+%     title("Robot Tours: Naive Method, " + ...
+%     num2str(flagTether) + ", " + num2str(flagNorm));
+%     xlabel("x distance (arbitrary units)");
+%     ylabel("y distance (arbitrary units)");
+    xlabel("\textbf{$$\mathbf{x}$$ distance (arbitrary units)}", ...
+        'fontweight','bold','FontSize',16);
+    ylabel("\textbf{$$\mathbf{y}$$ distance (arbitrary units)}",'fontweight', ...
+        'bold','FontSize',16);
+    
+    delta = 5;
+    xlim([min(nodecoords(:,2))-delta,max(nodecoords(:,2))+delta])
+    ylim([min(nodecoords(:,3))-delta/3,max(nodecoords(:,3))+delta/3])
 
 
 end
