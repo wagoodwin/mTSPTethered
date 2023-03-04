@@ -29,7 +29,7 @@ To change between norms, just change the distance function in the
 % TO RUN: Just press "Run" in the MATLAB editor
 
 clc; 
-clearvars;
+clearvars; clear all;
 yalmip('clear');
 
 % If flagIterative == 1, the iterative method will run. Otherwise, only the
@@ -43,18 +43,18 @@ flagTether = 0;
 % implements the tether constraints. 
 
 numOfRobots = 3;
-numOfCities = 11; % including the dummy city
-tetherLength = 60;
+numOfCities = 6; % including the dummy city
+tetherLength = 70; % For debugging purposes
 % Distance value used for dummy node creation. Ensures that our 'zeroth'
 % node has zero cost from 0 to node 1 but doesn't go to other nodes
 % during optimization.
-M = 10e3; % Tried M = inf, but YALMIP poops itself.
+M = 10e4; % Tried M = inf, but YALMIP poops itself.
 
 % Set that represents all nodes but the first. Used for generating a set of
 % all possible subtours with Dantzig-Fulkerson-Johsnon (DFJ) subtour
 % eliminiation constraints (SECs).
-V = {2,3,4,5,6,7,8,9,10,11};
-V0 = {1,2,3,4,5,6,7,8,9,10,11}; % set of nodes that includes dummy node
+V =  num2cell(2:numOfCities);
+V0 = num2cell(1:numOfCities); % set of nodes that includes dummy node
 
 % Initialize sdpvar object for use in constraints 3,4. Will be 
 % included in objective function. Traversal: any entrance or exit
@@ -67,12 +67,12 @@ p = numOfCities - numOfRobots;
 % Truncated eil51 node coords further to just 5 cities
 % nodecoords = load('ToyProblemNodeCoords.txt');
 nodecoords = load('TruncatedEil51NodeCoords.txt');
-nodecoords = nodecoords(1:numOfCities-1,:);
+nodecoords = nodecoords(1:numOfCities,:);
 
 C = zeros(numOfCities);
 
-for i = 1:numOfCities-1
-    for j = 1:numOfCities-1   
+for i = 1:numOfCities
+    for j = 1:numOfCities  
         C(i,j) = distance(nodecoords(i,2), nodecoords(i,3), ...
            nodecoords(j,2), nodecoords(j,3));
     end
@@ -90,13 +90,40 @@ temp(1,3:end) = M*ones(1,(numOfCities+1 - 2));
 temp(3:end,1) = M*ones((numOfCities+1 -2),1);
 
 C = temp(1:end-1,1:end-1);
-
-% Set the cost to return to the dummy nodes to be the same as the cost to
-% return to node 1:
-%C(1:end,1) = C(1:end,2);
-
+% C(1,1) = M;
 
 %% mTSP constraints
+
+
+% When setting j = 1 with no x(1,1,k) == 0 for all k constraint:
+
+
+% 
+%      1     2     2     5     4     2     1
+%      1     2     2     4     3     2     1
+%      1     2     6     2     2     2     1
+
+
+% When setting j=2 with x(1,1,k) == 0 for all k
+% 
+% value(objective3)
+% 
+% ans =
+% 
+%   187.6801
+% 
+% value(objective2)
+% 
+% ans =
+% 
+%   187.6621
+
+
+% routeMatrix =
+% 
+%      1     2     4     2     5     2     1
+%      1     2     2     6     3     2     1
+%      1     2     4     2     4     2     1
 
 % ConstraintS 1 and 2 (eqns 10 and 11 in the ICTAI paper)
 % Ensure robots start and end at the first (dummy node)
@@ -107,14 +134,15 @@ xj1kTotal = 0;
 for k = 1:numOfRobots
     x1jkTotal = 0;
     xj1kTotal = 0;
-    for j = 2:numOfCities
+    for j = 1:numOfCities
         x1jkTotal = x1jkTotal + x(1,j,k);
         xj1kTotal = xj1kTotal + x(j,1,k);
     end
     constraint1 = [constraint1, (x1jkTotal == 1)];
     constraint2 = [constraint2, (xj1kTotal == 1)];
 end
-
+% constraint1 = [];
+% constraint2 = [];
 
 % Constraints 3 and 4 (eqns 12 and 13)
 % Ensures robots, as a whole, enter and exit each node once except for the
@@ -189,6 +217,7 @@ for j = 2:numOfCities
         rhsSum = 0;
     end  
 end
+% constraint5 = [];
 
 % Constraint 6: subtour elimination constraints (SECs)
 xS = 0;
@@ -240,64 +269,6 @@ S = PowerSet(V);
 
 % Ensure the cardinality of the subsets lays between 2 and (numOfCities-1)
 S = S(2:end-1);
-
-%{
-% Note: to remove cell i from a cell array B, do B(i) = [];
-
-% % We're basically checking to see where the size of the cells goes from 1
-% % to 2 and then from (numOfCities -2) to (numOfCities -1). Only works
-% % because the cardinalities of the subtour sets comprise a sequence that 
-% % starts at 1 and only increases.
-% lastIndexOfOneElementCells = 0;
-% firstIndexOfHighCardElementCells = 0;
-% for i = 1:numel(S)-1
-%     if (numel(S{i}) == 1) && (numel(S{i+1}) == 2)
-%         lastIndexOfOneElementCells = i;
-%     end
-%     if (numel(S{i}) == (numOfCities -2) ) && ...
-%             (numel(S{i+1}) == (numOfCities -1) )
-%         firstIndexOfHighCardElementCells = i;
-%     end
-% end
-% % UPDATE: this method to get rid of 1 and 9-node tours isn't working.
-% % Harcoding the indices for now. 
-% 
-% lastIndexOfOneElementCells = 10;
-% firstIndexOfHighCardElementCells = 513;
-
-% S = S(lastIndexOfOneElementCells+1:firstIndexOfHighCardElementCells-1);
-
-
-% 
-% % Now implement the constraints:
-% constraintSEC = [];
-% xijkSum = 0;
-% % For each subtour (each set in S)
-% for t = 1:numel(S)
-%     % For each robot
-%     for k = 1:numOfRobots
-%         % NOW we do our double sum
-%         for i = 1:numel(S{t})
-                % Debugging trick (temporary)
-                if t == 383
-                    disp("dummy line");
-                end
-%             % We sum all j's that aren't in the set S:
-%             for j = 1:numel(V0) % for j not in S,
-%                     % Checks to ensure j is not a member of S:
-%                 if( sum((ismember(cell2mat(S{t}),j)) == 0) )
-%                     xijkSum = xijkSum + x(S{t}{i},j,k);
-%                 end
-%             end
-%         end
-%         constraintSEC = [constraintSEC, (xijkSum >= 2)];
-%         % Reset sum for next robot:
-%         xijkSum = 0;
-%     end
-% end
-
-%}
-
 
 % Now implement the constraints:
 % bin represents whether a robot is inside or outside a subset. If bin = 1,
@@ -381,10 +352,14 @@ constraintx = [(x >= 0), (x <= M)];
 % So we're saying that we don't want the robots to visit a city more than
 % M (3) times for all cities.
 
+constraintDummyNode = [(x(1,1,1) == 0), (x(1,1,2) == 0), (x(1,1,3) == 0)];
+constraintDummyNode = [];
+
+
 % Complete constraints             
 constraints = [constraint1, constraint2, constraint3, constraint4, ...
                constraint5, constraint6, constraint8, constraintx ...
-               constraintSEC];
+               constraintSEC, constraintDummyNode];
  
 % Objectives
 SalesmanDistances = [];
@@ -417,17 +392,16 @@ if (flagIterative == 0)
 %         getAllRobotTourInfo(C, numOfCities, numOfRobots, value(x2));
 end
 
-%% testing
-
-routeMatrix = []; 
-flag = 0;
+%% New Retraced Naive Method
 
 if (flagIterativeNew == 1)
     tic
+    routeMatrix = []; 
+    flag = 0;
+    distanceMatrix = [];
     while(1)
         % run simulation
-        clc
-        options = sdpsettings('verbose',0,'solver','Gurobi');
+        options = sdpsettings('verbose',1,'solver','Gurobi');
         sol = optimize(constraints,objective3,options);
         sol.problem;
         value(objective3);
@@ -492,9 +466,9 @@ if (flagIterativeNew == 1)
                     % matrix. If that doesn't work, skip to the next iteration:
                     try
                         routeMatrix = [robot1Paths{i}; robot2Paths{j}; ...
-                                       robot3Paths{k}];     
+                                       robot3Paths{k}];
                     catch
-                        disp('Tour lengths mismatch. skipping this iteration...')
+%                         disp('Tour lengths mismatch. skipping this iteration...')
                         continue
                     end
 
@@ -518,19 +492,43 @@ if (flagIterativeNew == 1)
                     % tours:
                     distanceMatrix = getOnlyDistances(routeMatrix,C);
 
-                    % Finally, check the inter-city distances. Can maybe do it 
-                    % similarly to before. If they're all less than the tether
-                    % length, we're good, and we can exit.
-                    if( sum(sum(distanceMatrix <= tetherLength)) == 0)
-                        flag = 1; 
+                    % Finally, check the inter-city distances. If every
+                    % inter-robot distance, for all simulation steps, is
+                    % less than the tether length, assign the flag to 1,
+                    % allowing us to break out of the nested for loops and
+                    % end the algorithm:
+                    
+                    if( sum(sum(distanceMatrix <= tetherLength)) ==  ...
+                                                    numel(distanceMatrix))
+                        flag = 1;
+                    end
+                    % Otherwise, continue iterating. If we get to the end
+                    % of the set of iterations and still don't have a
+                    % solution that works, we'll have to rerun the sim. The
+                    % command to rerun the sim is based on the flag, and it
+                    % happens outside of these iterations.
+                    if (flag == 1)
+                        disp('bingo boingo')
                     end
 
                 end
             end
         end
-        % Hit this break when we're out of all loops. We get out of all
-        % loops when we find a set of tours that works. 
-        break
+        
+        % If the flag is 0, it means no solution worked from the previous
+        % set, so update the constraints and rerun:
+        if (flag == 0)
+            for ii = 1:numOfRobots
+                constraints = [constraints, ...
+                               (x(:,:,ii) ~= value(x(:,:,ii))) ];
+            end
+        % Otherwise, we found a solution that works, so break out and
+        % end.
+        else
+            break
+        end
+        
+        
     end
     toc
 end
@@ -708,29 +706,6 @@ toc
 end
 
 %
-
-
-%% Notes
-
-% Another point: there could be multiple solutions that fulfill the 
-% tether length constraint. In that case, we'd need to be able to 
-% show all of those solutions.
-
-% Then, we'd want to add a condition that stops the loop if the 
-% the same solution has been found twice. If the same solution has
-% been found twice, then that means the computer can't narrow down the
-% correct solution, so the loop should stop. If the computer had narrowed
-% down the correct solution, the loop woudl've stopped after finding 
-% the solution the first time.
-
-% UPDATE: if you run the loop long enough, you end up getting a weird
-% error where the robots no longer go to all of the cities. Discuss this
-% incident with Yong. It's possible that this kind of error just means
-% there aren't any solutions left at all, let alone solutions that 
-% satisfy the constraint. That is, we excluded so many solutions that 
-% we just ran out of stuff that works. As such, the move here might to break
-% out of the loop if the error happens or if colIdxs and colIdxs2 no 
-% longer show that the robots are visiting all 10 cities.
 
 
 %% Plotting 
