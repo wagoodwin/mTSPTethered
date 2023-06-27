@@ -41,10 +41,10 @@ yalmip('clear');
 
 % If flagIterative == 1, the iterative method will run. Otherwise, only the
 % original simulation will run.
-flagIterative = 0;
+flagIterative = 1;
 % If flagTether == 1, the sim will run while incorporating tether
 % constraints.
-flagTether = 0;
+flagTether = 1;
 if flagIterative == 1
     flagTether = 1;
 end
@@ -55,8 +55,8 @@ end
 flagNorm = "two"; % OPTIONS: "two-squared", "one", "two"
 
 numOfRobots = 3;
-numOfCities = 10;
-tetherLength = 70;
+numOfCities = 6;
+tetherLength = 50;
 
 % Truncated eil51 node coords further to just 5 cities
 % nodecoords = load('ToyProblemNodeCoords.txt');
@@ -293,7 +293,8 @@ tic % to see how long the sim takes
 while(1)
 
     % run simulation
-    options = sdpsettings('verbose',0,'solver','Gurobi');
+    % Set 'verbose' to 0 when timing the sim
+    options = sdpsettings('verbose',1,'solver','Gurobi');
     sol = optimize(constraints_2,objective2,options);
     sol.problem;
     value(objective2);
@@ -505,8 +506,8 @@ axes.XAxis.TickLabelFormat  = '\\textbf{%g}';
 axes.YAxis.TickLabelInterpreter = 'latex';
 axes.YAxis.TickLabelFormat = '\\textbf{%g}';
 
-exportgraphics(gca, ...
-    '/home/walter/Desktop/ThesisFigures/Naive/Tether70/naive_unteth_2.jpg', 'Resolution', '1000')
+% exportgraphics(gca, ...
+%     '/home/walter/Desktop/ThesisFigures/Naive/Tether70/naive_unteth_2.jpg', 'Resolution', '1000')
 
 
 %% Utility Functions

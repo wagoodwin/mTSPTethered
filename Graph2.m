@@ -73,6 +73,17 @@ classdef Graph2 < handle
             
         end
         
+        % Clears all visited routes. Somewhat hacky fix to prevent tours
+        % getting mixed together somehow when iterating over ordered pairs
+        % (i,j).
+        % LONG-TERM FIX: have the code reset this stuff after every run by
+        % itself
+        function [self] = resetObject(self)
+            self.m_visitedRoutes = {};
+            self.m_routeNumber = 1;
+            self.m_currentNearestVertex = [];
+        end
+        
         % Recursive helper function used to actually print and store paths
         function [self] = printAllPathsUtil(self, goalNode, path)
                                       
@@ -94,7 +105,7 @@ classdef Graph2 < handle
                 % yet, DO THIS:
                 if (path(end) == goalNode && routeBool == false)
 
-                    disp(path) % Comment this line to stop path printing
+%                     disp(path) % Comment this line to stop path printing
                     % Increment the total number of routes we've found:
                     self.m_routeNumber = self.m_routeNumber + 1;
                     % Add an extra empty slot in the set-of-sets of visited
@@ -124,8 +135,17 @@ classdef Graph2 < handle
                     % deeper into the recursion calls now gives the robot
                     % fewer places to go, eventually stopping the madness.
                     %}
-                    assert(self.m_adjMatrix(path(end-1), path(end)) >= 0, ...
-                    "Negative value in Adjacency Matrix!")
+                        
+                        
+%                     assert(self.m_adjMatrix(path(end-1), path(end)) >= -0.1, ...
+%                     "Negative value in Adjacency Matrix!")
+%                     % Put -0.1 instead of 0 to enforce positive values
+%                     % because -0.0000 will sometimes be returned for values
+%                     % in the adjacency matrix, making the algo think a
+%                     % negative value appeared. However, since all these
+%                     % values are integers, -0.1 will never happen, so we'll
+%                     % get real errors if an actual negative integer shows
+%                     % up
 
                     % Move on to the next edge, and act like it 
                     % doesn't exist (go to next iteration in for
@@ -163,7 +183,7 @@ classdef Graph2 < handle
             routeBool = isCurrentRouteInVisitedRoutes(self.m_visitedRoutes, path);
             if (path(end) == goalNode && routeBool == false)
 
-                disp(path) % Comment this line to stop path printing
+%                 disp(path) % Comment this line to stop path printing
                 % Increment the total number of routes we've found:
                 self.m_routeNumber = self.m_routeNumber + 1;
                 % Add an extra empty slot in the set-of-sets of visited

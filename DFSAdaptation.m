@@ -44,45 +44,202 @@ clearvars;
 
 %% Edge-DFS
 
-graph2 = Graph2(4);
-
-adjMatrix = [0 1 2 1; 0 0 0 1; 2 1 1 0; 0 0 0 0];
-
-graph2.loadAdjacencyMatrix(adjMatrix);
-
-paths = graph2.printAllPaths(3,3);
-
-
-% To access each path:
-allPaths = graph2.m_visitedRoutes;
+% graph2 = Graph2(4);
+% 
+% adjMatrix = [0 1 2 1; 0 0 0 1; 2 1 1 0; 0 0 0 0];
+% 
+% graph2.loadAdjacencyMatrix(adjMatrix);
+% 
+% paths = graph2.printAllPaths(3,4);
+% 
+% 
+% % To access each path:
+% allPathsFromHome = graph2.m_visitedRoutes;
 
 
 
 
 % Here's an example of the algorithm working with a real adjacency matrix.
 
-% matrix =   [0     1     0     0     0     0     0     0     0     0   0;
-%             1     0     0     0     0     0     0     1     0     0   0;
-%             0     0     0     1     0     0     0     1     0     0   0;
-%             0     0     1     0     1     0     0     0     0     0   0;
-%             0     0     0     1     0     0     0     0     0     0   0;
-%             0     0     0     0     0     0     0     0     0     0   0;
-%             0     0     0     0     0     0     0     0     0     0   0;
-%             0     1     1     0     0     0     0     0     0     0   0;
-%             0     0     0     0     0     0     0     0     0     0   0;
-%             0     0     0     0     0     0     0     0     0     0   0;
-%             0     0     0     0     0     0     0     0     0     0   0];
-% 
-% numVertices = numel(matrix(:,1));
-% graph2Mtsp = Graph2(numVertices);
-% graph2Mtsp.loadAdjacencyMatrix(matrix);
-% 
-% paths2 = graph2Mtsp.printAllPaths(1,1);
+matrix =   [0     1     0     0     0     0     0     0     0     0   0;
+            1     0     0     0     0     0     0     1     0     0   0;
+            0     0     0     1     0     0     0     1     0     0   0;
+            0     0     1     0     1     0     0     0     0     0   0;
+            0     0     0     1     0     0     0     0     0     0   0;
+            0     0     0     0     0     0     0     0     0     0   0;
+            0     0     0     0     0     0     0     0     0     0   0;
+            0     1     1     0     0     0     0     0     0     0   0;
+            0     0     0     0     0     0     0     0     0     0   0;
+            0     0     0     0     0     0     0     0     0     0   0;
+            0     0     0     0     0     0     0     0     0     0   0];
+
+numVertices = numel(matrix(:,1));
+graph2Mtsp = Graph2(numVertices);
+graph2Mtsp.loadAdjacencyMatrix(matrix);
+
+paths2 = graph2Mtsp.printAllPaths(1,1);
+allPaths = graph2Mtsp.m_visitedRoutes;
 
 % This adjacency matrix doesn't have any repeat paths, but as an easy
 % demo, put a 2 at the (1,1) spot of the matrix and run the sim again. 
 
 %% test
+
+% USE DIFFERENT LANGUAGE than citiesVisited and citiesUnvisited. They're
+% all visited; it's just that some are parts of subtours and some aren't.
+
+
+numCities = 6;
+clc
+
+% yili = [1 0 0 0; 0 0 0 0; 0 1 0 1; 0 1 0 0];
+yili = [1 0 0 0 0 0;
+        0 0 0 0 0 0;
+        0 0 0 1 0 0;
+        0 1 0 0 0 0;
+        0 0 0 0 0 1;
+        0 0 0 0 0 0];
+graphYili = Graph2(numCities);
+
+
+graphYili.loadAdjacencyMatrix(yili);
+
+% paths = graphYili.printAllPaths(1,1);
+paths = graphYili.printAllPaths(2,2);
+
+allPaths = graphYili.m_visitedRoutes
+%%
+
+clc
+numCities = 6;
+
+
+% yili = [1 0 0 0; 0 0 0 0; 0 1 0 1; 0 1 0 0];
+yili = [1 0 0 0 0 0;
+        0 0 0 0 0 0;
+        0 0 0 1 0 0;
+        0 1 0 0 0 0;
+        0 0 0 0 0 1;
+        0 0 0 0 0 0];
+graphYili = Graph2(numCities);
+
+
+graphYili.loadAdjacencyMatrix(yili)
+
+% paths1 = graphYili.printAllPaths(1,1)
+% allPaths1 = graphYili.m_visitedRoutes
+% 
+% graphYili.resetObject()
+% 
+% paths2 = graphYili.printAllPaths(2,1)
+% allPaths2 = graphYili.m_visitedRoutes
+
+for i = 1:6
+    for j = 1:6
+        graphYili.resetObject()
+        paths = graphYili.printAllPaths(i,j)
+        allPaths = graphYili.m_visitedRoutes
+    end
+end
+
+% 
+% paths = graphYili.printAllPaths(2,1);
+% allPaths = graphYili.m_visitedRoutes
+
+
+%%
+
+oi = [
+     3     0     1     0     0;
+     1     0     0     0     0;
+     0     1     0     1     0;
+     0     0     1     0     0;
+     0     0     0     0     0;];
+ 
+ graphOi = Graph2(5);
+ graphOi.loadAdjacencyMatrix(oi);
+ graphOi.printAllPaths(1,1);
+ allPaths = graphOi.m_visitedRoutes
+
+
+
+%%
+
+% SETUP
+clc;
+clearvars;
+
+
+numCities = 6;
+yili = [1 0 0 0 0 0;
+        0 0 0 0 0 0;
+        0 0 0 1 0 0;
+        0 1 0 0 0 0;
+        0 0 0 0 0 1;
+        0 0 0 0 0 0];
+    
+graphYili = Graph2(numCities);
+graphYili.loadAdjacencyMatrix(yili);
+
+% GRAB LIST OF UNVISITED CITIES
+pathObject = graphYili.printAllPaths(1,1);
+allPathsFromHome = graphYili.m_visitedRoutes;
+% 
+% Grab list of visited cities from Path-DFS solution:
+citiesVisited = [];
+for i = 1:numel(allPathsFromHome)
+    citiesVisited = [citiesVisited,cell2mat(allPathsFromHome{i})];
+end
+% Discern unvisited cities:
+uniqueCitiesVisited = unique(citiesVisited);
+citiesList = 1:1:numCities;
+citiesUnvisited = setdiff(citiesList,uniqueCitiesVisited);
+
+% LIST SUBTOURS
+subtour = {0}; % Now, subtour has an element, but it won't add constraints
+% to the model if it ends up just being 0
+for i = citiesUnvisited(1):1:citiesUnvisited(end)
+    for j = citiesUnvisited(1):1:citiesUnvisited(end)
+        
+        
+        % Print all subtours as individual cells
+        paths = graphYili.printAllPaths(i,j); % i and j represent city indices here
+        pathTemp = graphYili.m_visitedRoutes;
+        
+        % Grab smallest subtour (in terms of number of elements) from
+        % pathTemp. The '2' means that the min function looks at the number
+        % of columns. We look at the nubmer of columns to see the size
+        % because each cell is configured to be a row vector
+        [maxSize, maxIdx] = max(cellfun('size', pathTemp,2));
+        
+        if (isempty(setdiff(cell2mat({1 4 2}),cell2mat(pathTemp{maxIdx}) == true)))
+            disp('yonkers')
+        end
+        
+        if (numel(pathTemp{maxIdx}) > numel(subtour{1}))
+            subtour = pathTemp(maxIdx);
+        end
+        
+        % If you don't do this stuff, the route nubmer, cnv, and
+        % visitedRoutes still stay from old run, screwing things up. Will
+        % need to fix later more thoroughly
+        graphYili.resetObject(); 
+
+    end
+end
+
+% Note that {1,2,3,4,5} is not a good choice. It needs to be an actual
+% subtour, not random garbage. Will figure otu lateer
+% assert(smallestSubtour~={1,2,3,4,5}, 'no subtours found')
+
+    
+
+
+
+%%
+
+
+
 
 
 %% Notes
@@ -93,7 +250,7 @@ allPaths = graph2.m_visitedRoutes;
 % ever get keys with multiple values
 
 % Specifically, graph.m_vertexList never seems to get filled up. WTF
-% Solution: you have to specify if a class will pass stuff by value or by
+% SOLUTION: you have to specify if a class will pass stuff by value or by
 % reference. It's pass by value by default. By adding '< handle', we were
 % able to make the class pass by reference, fixing the problem.
 

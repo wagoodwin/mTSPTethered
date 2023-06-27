@@ -144,6 +144,14 @@ for i = 1:numOfTimeSteps
 end
 
 
+%% Random City Method
+
+un
+
+
+
+
+
 %% Objective Function and Tether Constraint: p-norm method
 
 % Idea: we make a variable called robotLocation for each robot. This
@@ -315,7 +323,7 @@ end
 tic;
 sol = optimize(constraints,objectiveMinMax);
 sol.info;
-totTime = toc;
+totTime = toc
 
 % get total distance traveled by all robots:
 totalDistanceSum = 0;
@@ -336,13 +344,7 @@ for k = 1:numOfRobots
     end
 end
 
-totalDistanceInd;
-
-
-
-
-
-
+totalDistanceInd
 
 %% Plotting
 clc; clear gca;
