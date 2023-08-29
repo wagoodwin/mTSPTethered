@@ -1,5 +1,13 @@
+function [soln, robotDistances, totTime, objectiveMinMax, flagIsFeasible] = ...
+    runTimedMethod(nodecoords,numOfCities, ...
+    numOfRobots, numOfTimeSteps, flagTether,tetherLength,flagNorm)
 
 
+clc; 
+clearvars -except nodecoords numOfCities numOfRobots numOfTimeSteps ...
+    flagTether tetherLength flagNorm;
+close all;
+yalmip('clear');
 
 %% mTSP Tethers, Reformulated
 % Walter Goodwin
@@ -9,41 +17,34 @@
 % 2. Change the tether constraint
 % 3. Change the objective function
 
-%{
 
-    Current issue: how do we generalize the algo to any number of robots?
-
-    Here are the details: right now, we have to build a new tether
-    constraint every time we want to enforce tethers between 2 robots. We
-    want a way that lets us enforce tethers between robots without adding
-    more code. 
-
-    
-%}
-
-
-clc; 
-clearvars;
-close all;
-yalmip('clear');
-
-
-flagNorm = "2-norm"; % options: "1-norm", "2-norm Squared", "2-norm"
-flagTether = "Tethered"; % options: "Tethered" or "Untethered"
+% flagNorm = "2-norm"; % options: "1-norm", "2-norm Squared", "2-norm"
+% flagTether = "Tethered"; % options: "Tethered" or "Untethered"
 
 
 %% Setup and Easy Constraints
 
-numOfTimeSteps = 8; % corresponds to i
-numOfCities = 10; % corresponds to j
-numOfRobots = 3; % corresponds to k
+% numOfTimeSteps corresponds to i
+% numOfCities    corresponds to j
+% numOfRobots    corresponds to k
 
-tetherLength = 50;
+% Sometimes, the node coordinates will be set up such that the problem
+% can't be solved with the given tether length (i.e., cities are too far
+% away). In practice, I actually haven't seen it yet, as if the tether
+% length is too short, the robots will visit all of the same cities in the 
+% same order (like "holding hands"). But in the case that problem cannot
+% be solve, for this reason or others, the model is rendered infeasible.
+% flagIsFeasible documents this fact. It's set to 1 (feasible) by default
+% and is set to 0 through an exception at the solver call.
+flagIsFeasible = 1;
+
+
+% tetherLength = 50;
 
 % Truncated eil51 node coords further to just 5 cities
 % nodecoords = load('ToyProblemNodeCoords.txt');
-nodecoords = load('TruncatedEil51NodeCoords.txt');
-nodecoords = nodecoords(1:numOfCities,:);
+% nodecoords = load('TruncatedEil51NodeCoords.txt');
+% nodecoords = nodecoords(1:numOfCities,:);
 % nodecoords = [(1:4)' randi(300,4,2)];
 
 C = zeros(numOfCities);
@@ -84,18 +85,6 @@ x = binvar(numOfTimeSteps,numOfCities,numOfRobots,'full');
 % Robots must start and end at node 1
 constraint1 = [];
 constraint2 = [];
-
-% x11kTotal = 0;
-% xn1kTotal = 0;
-% 
-% for k = 1:numOfRobots
-%     x11kTotal = x11kTotal + x(1,1,k);
-%     xn1kTotal = xn1kTotal + x(numOfTimeSteps,1,k);
-% end
-% 
-% constraint1 = [(x11kTotal == 1)];
-% constraint2 = [(xn1kTotal == 1)];
-
 
 for k = 1:numOfRobots % Robots start and end at node 1
     constraint1 = [constraint1, x(1,1,k) == 1];
@@ -146,7 +135,7 @@ end
 
 %% Objective Function and Tether Constraint: p-norm method
 
-% Idea: we make a variable called robotLocation for each robot. This
+% We make a variable called robotLocation for each robot. This
 % variable stores the node coordinate location of the robot at each time
 % step. We can then compare the distance between the robots at each time
 % step by subtracting these vectors at each time step and taking the norm. 
@@ -313,7 +302,12 @@ end
 % Solve system
 % options = sdpsettings('verbose',1,'solver','Gurobi');
 tic;
-sol = optimize(constraints,objectiveMinMax);
+try
+    sol = optimize(constraints,objectiveMinMax);
+catch
+    disp("The problem is infeasible");
+    flagIsFeasible = 0;
+end
 sol.info;
 totTime = toc;
 
@@ -328,6 +322,8 @@ end
 totalDistanceSum
 value(objectiveMinMax)
 value(x)
+
+soln = value(x);
 
 totalDistanceInd = zeros(numOfRobots,1);
 for k = 1:numOfRobots
@@ -431,11 +427,11 @@ function[] = plotRoute(nodecoords, xBinvar, ...
     % first plot just the node coordinates by themselves. Code influenced
     % by the "I want to create a plot using XY coordintes" post on 
     % the MathWorks forums.
-    x = nodecoords(:,2);
-    y = nodecoords(:,3);
-    n = numel(x);
+    xPoints = nodecoords(:,2);
+    yPoints = nodecoords(:,3);
+    n = numel(xPoints);
     plot(graph(1:n,1:n), 'LineStyle', 'none', 'Marker', 'd', ...
-       'NodeColor','black','XData',x,'YData',y);
+       'NodeColor','black','XData',xPoints,'YData',yPoints);
    
    % Then take the binvar matrix and put it in terms of row and column
    % indices:
@@ -571,5 +567,9 @@ function [] = plotTethers(numOfRobots, numOfTimeSteps, numOfCities, ...
         drawnow
 
     end
+end
+
+%%
+
 end
 

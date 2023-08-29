@@ -1,7 +1,8 @@
+function [soln, robotDistances, totTime, objectiveMinMax, flagIsFeasible, routeMatrix] = ...
+    runNaiveMethod(nodecoords,numOfCities, flagTether, ...
+    tetherLength,flagNorm, flagIterativeNew, timeLimit) 
+
 % Background
-
-
-
 
 %{
 We want to take the mTSP formulation and incorporate constraints that
@@ -29,23 +30,29 @@ To change between norms, just change the distance function in the
 % TO RUN: Press "Run" in the MATLAB editor
 
 clc; 
-clearvars; clear all;
+clearvars -except nodecoords numOfCities ...
+    flagTether tetherLength flagNorm flagIterativeNew timeLimit;
+close all;
 yalmip('clear');
 
+flagIsFeasible = 1; % default this flag to 1
 % If flagIterative == 1, the iterative method will run. Otherwise, only the
 % original simulation will run.
-flagIterativeNew = 1;
+
+% flagIterativeNew = 1;
 flagIterative = 0;
-flagSolveOnce = 0;
+flagSolveBaseProblem = 0;
+
 % If flagTether == 1, the plotting tool will include tethers. 
-flagTether = 1;
+% flagTether = 1;
 % Note that if you turn on flagIterative, you should probably turn on
 % flagTether, as the Iterative Method is the version of the sim that
-% implements the tether constraints. 
+% implements the tether constraints.
+% flagNorm = "2-norm"; % options: "2-norm", "1-norm"
 
 numOfRobots = 3;
-numOfCities = 10; %
-tetherLength = 70;
+% numOfCities = 5; %
+% tetherLength = 70;
 % Distance value used for dummy node creation. Ensures that our 'zeroth'
 % node has zero cost from 0 to node 1 but doesn't go to other nodes
 % during optimization.
@@ -57,13 +64,6 @@ M = 10e4; % Tried M = inf, but YALMIP poops itself.
 VminusFirst =  num2cell(2:numOfCities);
 V0 = num2cell(1:numOfCities); % set of nodes that includes dummy node
 
-% Initialize sdpvar object for use in constraints 3,4. Will be 
-% included in objective function. Traversal: any entrance or exit
-numNodeTraversals = sdpvar(numOfCities, numOfRobots, 'full');
-x = intvar(numOfCities, numOfCities, numOfRobots, 'full');
-u = sdpvar(numOfCities, 1, 'full');
-p = numOfCities - numOfRobots;
-
 % Initialize bin for SECs before solving problem
 % So first get all possible subtours:
 S = PowerSet(VminusFirst);
@@ -73,40 +73,38 @@ S = S(2:end);
 bin = binvar(numel(S),numOfRobots,'full'); 
 assign(bin,ones(numel(S),numOfRobots))
 
+% Initialize sdpvar object for use in constraints 3,4. Will be 
+% included in objective function. Traversal: any entrance or exit
+numNodeTraversals = sdpvar(numOfCities, numOfRobots, 'full');
+x = intvar(numOfCities, numOfCities, numOfRobots, 'full');
+u = sdpvar(numOfCities, 1, 'full');
+p = numOfCities - numOfRobots;
+
 % Truncated eil51 node coords further to just 5 cities
 % nodecoords = load('ToyProblemNodeCoords.txt');
-nodecoords = load('TruncatedEil51NodeCoords.txt');
-nodecoords = nodecoords(1:numOfCities,:);
+% nodecoords = load('TruncatedEil51NodeCoords.txt');
+% nodecoords = nodecoords(1:numOfCities,:);
 
 C = zeros(numOfCities);
 
 for i = 1:numOfCities
-    for j = 1:numOfCities  
-        C(i,j) = distance(nodecoords(i,2), nodecoords(i,3), ...
-           nodecoords(j,2), nodecoords(j,3));
+    for j = 1:numOfCities   
+        
+        if( (strcmp(flagNorm,"1-norm") == 1) )
+            C(i,j) = distance1(nodecoords(i,2), nodecoords(i,3), ...
+            nodecoords(j,2), nodecoords(j,3));
+        end
+        
+        if ( (strcmp(flagNorm,"2-norm") == 1) )
+             C(i,j) = distance(nodecoords(i,2), nodecoords(i,3), ...
+             nodecoords(j,2), nodecoords(j,3));
+        end
+        
     end
 end
+  
+C = real(C); 
 
-% for i = 1:numOfCities
-%     for j = 1:numOfCities  
-%         C(i,j) = distance1(nodecoords(i,2), nodecoords(i,3), ...
-%            nodecoords(j,2), nodecoords(j,3));
-%     end
-% end
-
-C = real(C);
-% C = C.^2; % We're using the sum of squared distances (SSD) as opposed 
-% % to the raw 2-norm to stay consistent between the two approaches
-
-% Reformat the cost matrix to have a dummy node:
-% temp = zeros(numOfCities+1, numOfCities+1);
-% temp(2:end,2:end) = C;
-% 
-% temp(1,3:end) = M*ones(1,(numOfCities+1 - 2));
-% temp(3:end,1) = M*ones((numOfCities+1 -2),1);
-% 
-% C = temp(1:end-1,1:end-1);
-% C(1,1) = M;
 
 
 %% DEBUG
@@ -432,7 +430,7 @@ objective3 = max(SalesmanDistances) + 0.001*sum(sum(numNodeTraversals));
 
 %% Solve Original System
 
-if (flagSolveOnce == 1)
+if (flagSolveBaseProblem == 1)
 
     tic 
     options = sdpsettings('verbose',1,'solver','Gurobi');
@@ -445,11 +443,14 @@ if (flagSolveOnce == 1)
 %         getAllRobotTourInfo(C, numOfCities, numOfRobots, value(x2));
 end
 
-%% New Retraced Naive Method
+%% New Retraced Naive Method w/Lazy Constraints
+% This method uses lazy constraints in the sense that we don't add DFJ
+% constraints unless the solution violates them. The only DFJ constraints
+% we add are ones that are directly violated by that specific solution.
 
 if (flagIterativeNew == 1)
     totTime = 0;
-    tic
+    tic;
     
     routeMatrix = []; 
     distanceMatrix = [];
@@ -462,7 +463,12 @@ if (flagIterativeNew == 1)
         % run simulation
         clc
         options = sdpsettings('verbose',1,'debug',0,'solver','Gurobi');
-        sol = optimize(constraintsCombined,objective2,options);
+        try
+            sol = optimize(constraintsCombined,objective2,options);
+        catch
+            disp("All feasible solutions have been excluded");
+            flagIsFeasible = 0;
+        end
         sol.problem;
         
         xSol   = value(x);
@@ -631,7 +637,21 @@ if (flagIterativeNew == 1)
                             sum(sum(distanceMatrix([2,3],:) > tetherLength)) == 0)
 
                             flag = 1;
-
+                            
+                        elseif (toc > timeLimit)    
+                            % Contingency: if the sim is taking longer than the
+                            % set runtime limit, just stop the sim here and
+                            % return the solution we do have. It won't be
+                            % feasible, but just have something. Then return.
+                           disp(['Could not find a tether-satisfying ', ...
+                                'solution in time. Returning the last ', ...
+                                'non-tether feasible solution.']);
+                            flagIsFeasible = 0;
+                            totTime = toc;
+                            soln = xSol;
+                            objectiveMinMax = value(objective3);
+                            robotDistances = distanceMatrix;
+                           return
                         end
                         % Otherwise, continue iterating. If we get to the end
                         % of the set of iterations and still don't have a
@@ -639,7 +659,7 @@ if (flagIterativeNew == 1)
                         % command to rerun the sim is based on the flag, and it
                         % happens outside of these iterations.
                         if (flag == 1)
-                            disp('bingo boingo')
+                            disp('found a feasible solution')
                         end
 
                     end
@@ -675,12 +695,15 @@ if (flagIterativeNew == 1)
             constraintsCombined = [constraintsCombined, constraintSEC];
             constraintSEC = [];
             catch
-                disp("yonkers")
+                disp("cannot add SECs")
             end
         end
         
     end
-    totTime = toc
+    totTime = toc;
+    soln = xSol;
+    objectiveMinMax = value(objective3);
+    robotDistances = distanceMatrix;
 end
 
 %% Adding Tether Constraints Iteratively-- Getting the New System
@@ -720,7 +743,7 @@ while(1)
     sol = optimize(constraints_2,objective2,options);
     sol.problem;
     value(objective2);
-    value(x2);
+    value(x);
 
     % Record previous values of the max tour length of some robot
     pastAnswers = [pastAnswers value(objective1)];
@@ -730,7 +753,7 @@ while(1)
        
     
     [RobotDistances, RobotRowIdxs, RobotColIdxs] = ...
-       getAllRobotTourInfo(C, numOfCities, numOfRobots, value(x2));
+       getAllRobotTourInfo(C, numOfCities, numOfRobots, value(x));
     % RobotDistances gives the distances between the robots at each
     % time step. Row 1 gives distance(r1,r2), row 2 gives
     % distance(r1,r2), and row 3 gives distance(r2,r3).
@@ -822,8 +845,8 @@ while(1)
         
     if flag == 0
         for k = 1:numOfRobots
-             constraints_2 = [constraints_2, exclude(x2(:,:,k), ...
-             value(x2(:,:,k)))];
+             constraints_2 = [constraints_2, exclude(x(:,:,k), ...
+             value(x(:,:,k)))];
         end
         
     else
@@ -851,7 +874,7 @@ end
 % there. Then, you need to include the three nested for loops in this code
 % to check all the combinations.
 
-totTime = toc
+totTime = toc;
 
 end
 
@@ -866,15 +889,10 @@ set(0,'defaulttextinterpreter','latex');
 % The robots would have different colored-paths to help distinguish
 % the paths. This strategy would work for a low number of robots only,
 % but the project will involve only a low number of robots anyway, so 
-% no problem.    
+% no problem.   
 
 % Putting the routeMatrix in terms of robotRowIdxs and colIdxs to make
-% plotting work
-
-% TODO: MAKE PLOTTING WORK AUTOMATICALLY INSTEAD OF CURRENT HACKY FIX
-
-% routeMatrix = [1 9 10 8 1 1 1 1; 1 1 6 5 1 1 1 1; 1 1 1 7 2 3 4 1]; % 50
-routeMatrix = [1 1 9 10 8 1; 1 1 1 6 5 1; 1 7 2 3 4 1];
+% plotting work.
 
 RobotRowIdxs = [];
 RobotColIdxs = [];
@@ -896,18 +914,37 @@ plotRoute(nodecoords, RobotRowIdxs(1,:,2) , RobotColIdxs(1,:,2), 'magenta')
 plotRoute(nodecoords, RobotRowIdxs(1,:,3) , RobotColIdxs(1,:,3), 'blue')
 
 % 1,2,3 specifcy the two robots with which you want the tethers drawn
-if (flagTether == 1)
+if (flagTether == "Tethered")
     
-    % Another thing we'll need to do: we'll need to determine how to
-    % automatically draw the correct tethers between the robots. This task
-    % shouldn't be too hard once we figure out how to generalize the algo
-    % to any number of robots.
+    % The robots that meet the tether constraints change every
+    % run (e.g., 1 and 3 may be tethered one run, 1 and 2 the next, etc.), so
+    % figure out between which robots are meeting the tether constraints:
     
-    plotTethers(nodecoords, RobotRowIdxs, ...
+    % row 1: between 1 and 2. r2: 1,3. r3: 2,3.
+    if (sum(distanceMatrix(1,:) < tetherLength) == ...
+            numel(distanceMatrix(1,:)))
+        
+        plotTethers(nodecoords, RobotRowIdxs, ...
         RobotColIdxs, 1, 2, 'black', '--')
-    plotTethers(nodecoords, RobotRowIdxs, ...
+    end
+    
+    if (sum(distanceMatrix(2,:) < tetherLength) == ...
+            numel(distanceMatrix(2,:)))
+        
+        plotTethers(nodecoords, RobotRowIdxs, ...
         RobotColIdxs, 1, 3, 'black', ':' )
+    end
+    
+    if (sum(distanceMatrix(3,:) < tetherLength) == ...
+            numel(distanceMatrix(3,:)))
+        
+        plotTethers(nodecoords, RobotRowIdxs, ...
+        RobotColIdxs, 2, 3, 'black', ':' )
+    end    
     hold off
+    
+    % Still a bit of a hacky fix (depends on not being able to change the
+    % number of robots), but better than before
     
 end
 
@@ -926,7 +963,6 @@ axes.YAxis.TickLabelFormat = '\\textbf{%g}';
 ax = gca;
 % exportgraphics(ax, ...
 %     '/home/walter/Desktop/ThesisFigures/NaiveBacktracking/Tether70/LAZYnaiveBack2Norm.jpg', 'Resolution', '1000')
-
 
 
 %%
@@ -1034,11 +1070,7 @@ ax = gca;
 % % % need to fix Graph2.m later more thoroughly
 % graphx.resetObject(); 
 
-
-
 %% Utility Functions
-
-
 
 function[flag] = flagSubtour(x)
 
@@ -1795,4 +1827,7 @@ function [] = plotTethers(nodecoords, RobotRowIdxs,RobotColIdxs, ...
         drawnow
 
     end
+end
+
+
 end
