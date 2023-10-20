@@ -1,3 +1,5 @@
 yalmip
-mTSP_tethers_reformulation.asv
-mTSP_tethers_working.asv
+
+
+# Ignore all files with .asv extensions
+./*.asv

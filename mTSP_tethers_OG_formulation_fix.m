@@ -1,62 +1,71 @@
-%% Background
+% Background
+
+
+
 
 %{
-
 We want to take the mTSP formulation and incorporate constraints that
 represent tethers
-
 We've got two routes here.
-
 ROUTE 1: Brute force
-
 Make a toy example (2 robots, 3 or 4 cities) and add a bunch of tether
 constraints like we talked about in our meeting. Run it and observe
 the results
-
 RESULT 2: Also Brute force, but different
-
 Run the whole simulation and then check to see if a tether constraint was
 violated. If a constraint was violated, exclude that solution, add a 
 constraint that prevents that solution from happening, and resolve. 
-
 The constraint would involve just saying x(i,j,1) and x(i,j,2) can't 
 both be 1 at the same time.
-
 In this case, we'd also make a toy problem to speed things up. 2 robots
 and 5 cities.
-
-
-
 To change between norms, just change the distance function in the 
 % cost matrix.
-
 %}
 
 
 %% Setup
 
+% TO RUN: Just press "Run" in the MATLAB editor
+
 clc; 
-clear all;
+clearvars; clear all;
 yalmip('clear');
 
 % If flagIterative == 1, the iterative method will run. Otherwise, only the
 % original simulation will run.
-flagIterative = 1;
-% If flagTether == 1, the sim will run while incorporating tether
-% constraints.
+flagIterativeNew = 1;
+flagIterative = 0;
+flagSolveOnce = 0;
+% If flagTether == 1, the plotting tool will include tethers. 
 flagTether = 1;
-if flagIterative == 1
-    flagTether = 1;
-end
+% Note that if you turn on flagIterative, you should probably turn on
+% flagTether, as the Iterative Method is the version of the sim that
+% implements the tether constraints. 
 
-% TODO: CONSOLIDATE FLAGITERATIVE AND FLAGTETHER INTO ONE FLAG
-
-% One more thing to add: a flag to designate what kind of norm we're using
-flagNorm = "two"; % OPTIONS: "two-squared", "one", "two"
+flagNorm = "two"; % OPTIONS: "one", "two"
 
 numOfRobots = 3;
-numOfCities = 6;
-tetherLength = 50;
+numOfCities = 5; % including the dummy city
+tetherLength = 70; % For debugging purposes
+% Distance value used for dummy node creation. Ensures that our 'zeroth'
+% node has zero cost from 0 to node 1 but doesn't go to other nodes
+% during optimization.
+M = 10e4; % Tried M = inf, but YALMIP poops itself.
+
+% Set that represents all nodes but the first. Used for generating a set of
+% all possible subtours with Dantzig-Fulkerson-Johsnon (DFJ) subtour
+% eliminiation constraints (SECs).
+V =  num2cell(2:numOfCities);
+V0 = num2cell(1:numOfCities); % set of nodes that includes dummy node
+
+% Initialize sdpvar object for use in constraints 3,4. Will be 
+% included in objective function. Traversal: any entrance or exit
+numNodeTraversals = sdpvar(numOfCities, numOfRobots, 'full');
+
+x = intvar(numOfCities, numOfCities, numOfRobots, 'full');
+u = sdpvar(numOfCities, 1, 'full');
+p = numOfCities - numOfRobots;
 
 % Truncated eil51 node coords further to just 5 cities
 % nodecoords = load('ToyProblemNodeCoords.txt');
@@ -81,184 +90,506 @@ for i = 1:numOfCities
     end
 end
 
+
 C = real(C);
-if(strcmp(flagNorm,"two-squared") == 1)
-    C = C.^2; % We're using the sum of squared distances (SSD) as opposed 
-    % to the raw 2-norm to stay consistent between the two approaches
-end
+% C = C.^2; % We're using the sum of squared distances (SSD) as opposed 
+% % to the raw 2-norm to stay consistent between the two approaches
+
+% Reformat the cost matrix to have a dummy node:
+% temp = zeros(numOfCities+1, numOfCities+1);
+% temp(2:end,2:end) = C;
+% 
+% temp(1,3:end) = M*ones(1,(numOfCities+1 - 2));
+% temp(3:end,1) = M*ones((numOfCities+1 -2),1);
+% 
+% C = temp(1:end-1,1:end-1);
+% C(1,1) = M;
 
 
+%% DEBUG
+% 
+% x = zeros(numOfCities,numOfCities,numOfRobots);
+% 
+% x(:,:,1) = ...
+%     [0     1     0     0     0     0;
+%      1     0     0     0     1     0;
+%      0     0     0     0     0     0;
+%      0     1     0     0     0     0;
+%      0     0     0     1     0     0;
+%      0     0     0     0     0     0];
+% 
+% x(:,:,2) = ...
+%     [0     1     0     0     0     0;
+%      1     1     0     0     0     1;
+%      0     0     0     0     0     0;
+%      0     0     0     0     0     0;
+%      0     0     0     0     0     0;
+%      0     1     0     0     0     1;];
+% 
+%  x(:,:,3) = ...
+%     [0     1     0     0     0     0;
+%      1     1     1     0     0     0;
+%      0     1     0     0     0     0;
+%      0     0     0     0     0     0;
+%      0     0     0     0     0     0;
+%      0     0     0     0     0     0;];
+
+% radda = PowerSet(V)
 
 %% mTSP constraints
 
-x2 = binvar(numOfCities, numOfCities, numOfRobots, 'full');
 
-u = sdpvar(numOfCities, 1, 'full');
-p = numOfCities - numOfRobots;
+% When setting j = 1 with no x(1,1,k) == 0 for all k constraint:
 
-% ConstraintS 1 and 2 (eqns 10 and 11)
-constraint1_2 = [];
-constraint2_2 = [];
+
+% 
+%      1     2     2     5     4     2     1
+%      1     2     2     4     3     2     1
+%      1     2     6     2     2     2     1
+
+
+% When setting j=2 with x(1,1,k) == 0 for all k
+% 
+% value(objective3)
+% 
+% ans =
+% 
+%   187.6801
+% 
+% value(objective2)
+% 
+% ans =
+% 
+%   187.6621
+
+
+% routeMatrix =
+% 
+%      1     2     4     2     5     2     1
+%      1     2     2     6     3     2     1
+%      1     2     4     2     4     2     1
+
+% ConstraintS 1 and 2 (eqns 10 and 11 in the ICTAI paper)
+% Ensure robots start and end at the first (dummy node)
+constraint1 = [];
+constraint2 = [];
 x1jkTotal = 0;
 xj1kTotal = 0;
 for k = 1:numOfRobots
     x1jkTotal = 0;
     xj1kTotal = 0;
-    for j = 2:numOfCities
-        x1jkTotal = x1jkTotal + x2(1,j,k);
-        xj1kTotal = xj1kTotal + x2(j,1,k);
+    for j = 1:numOfCities
+        x1jkTotal = x1jkTotal + x(1,j,k);
+        xj1kTotal = xj1kTotal + x(j,1,k);
     end
-    constraint1_2 = [constraint1_2, (x1jkTotal == 1)];
-    constraint2_2 = [constraint2_2, (xj1kTotal == 1)];
+    constraint1 = [constraint1, (x1jkTotal >= 1)];
+    constraint2 = [constraint2, (xj1kTotal >= 1)];
 end
+% constraint1 = [];
+% constraint2 = [];
 
+% Constraints 3 and 4 (eqns 12 and 13)
+% Ensures robots, as a whole, enter and exit each node once except for the
+% first node. We want all robots to go to the first node, so we want the
+% robots to enter and exit that node 3 times, not just once. We implement
+% that change in the following constraints after these 2.
 
-% Constraint 3 (eqn 12)
-% First, build the constraint vector:
-constraint3_2 = [];
-% Then, build a vector to hold the sum of all of 
+constraint3 = []; % constraint 3  start
+% Then, build a vector to hold the sum of all of
 % the values of each numOfCities x numOfRobots matrix.
 % See handwritten work for a more intuitive visualiztion.
-% planeTotal_ik = zeros(1, numOfCities, 1);
 planeTotal_ik = 0;
-for j = 2:numOfCities
-    % reset the value of planeTotal_ik to 0 for the next constraint:
-    planeTotal_ik = 0;
-    for i = 1:numOfCities
-        for k = 1:numOfRobots
-            if i ~=j
-%                 planeTotal_ik(1,j,1) = planeTotal_ik(1,j,1) + x(i,j,k);
-                  planeTotal_ik = planeTotal_ik + x2(i,j,k);
-            end
-            
-        end
-    end
-    % Build the constraint here
-    constraint3_2 = [constraint3_2, (planeTotal_ik == 1)]; % legal? I think so 
-    
-end
-
-
-% New issue: we can't assign an sdpvar to a vector. As such,
-% the loop I had for constraint3 had to be reworked such that we're
-% only storing the planeTotal_ik value as a single variable.
-
-
-% Constraint 4 (eqn 13)
-constraint4_2 = [];
-% planeTotal_jk = zeros(numOfcities, 1, 1);
-planeTotal_jk = 0;
-for i = 2:numOfCities
-    planeTotal_jk = 0;
+% for j = 1:numOfCities
+%     % reset the value of planeTotal_ik to 0 for the next constraint:
+%     planeTotal_ik = 0;
+%     for i = 1:numOfCities
+%         for k = 1:numOfRobots
+%                   planeTotal_ik = planeTotal_ik + x(i,j,k);
+%         end
+%     end
+%     % Build the constraint here
+%     constraint3 = [constraint3, (planeTotal_ik == numNodeTraversals(j)) ];
+% end
+for k = 1:numOfRobots
     for j = 1:numOfCities
-        for k = 1:numOfRobots
-            if i ~=j
-%                 planeTotal_jk(i,1,1) = planeTotal_jk(i,1,1) + x(i,j,k);
-                  planeTotal_jk = planeTotal_jk + x2(i,j,k);
-            end
-            
+        planeTotal_ik = 0;
+        for i = 1:numOfCities
+            planeTotal_ik = planeTotal_ik + x(i,j,k);
         end
+        constraint3 = [constraint3, (planeTotal_ik == numNodeTraversals(j,k))];
     end
-    constraint4_2 = [constraint4_2, (planeTotal_jk == 1)];
-    
 end
+
+constraint4 = []; % constraint 4 start
+planeTotal_jk = 0;
+% for i = 1:numOfCities
+%     planeTotal_jk = 0;
+%     for j = 1:numOfCities
+%         for k = 1:numOfRobots
+%                   planeTotal_jk = planeTotal_jk + x(i,j,k);
+%         end
+%     end
+%     constraint4 = [constraint4, (planeTotal_jk == numNodeTraversals(i)) ];
+% end
+for k = 1:numOfRobots
+    for i = 1:numOfCities
+        planeTotal_jk = 0;
+        for j = 1:numOfCities
+            planeTotal_jk = planeTotal_jk + x(i,j,k);
+        end
+        constraint4 = [constraint4, (planeTotal_jk == numNodeTraversals(i,k))];
+    end
+end
+
 
 % Constraint 5 (eqn 14)
-% lhsSum = zeros(1,numOfCities, numOfRobots);
-% rhsSum = zeros(numOfCities, 1, numOfRobots);
+% Prevent robots from entering and exiting more than one city at a time
 lhsSum = 0;
 rhsSum = 0;
-constraint5_2 = [];
-% Build LHS sum (ignore this comment now)
+constraint5 = [];
 for j = 2:numOfCities
-  
     for k = 1:numOfRobots
         for i = 1:numOfCities
             if i ~= j
-%                 lhsSum(1,j,k) = lhsSum(1,j,k) + x(i,j,k);
-                  lhsSum = lhsSum + x2(i,j,k);
-                  rhsSum = rhsSum + x2(j,i,k);
+                  lhsSum = lhsSum + x(i,j,k);
+                  rhsSum = rhsSum + x(j,i,k);
             end
         end
-        constraint5_2 = [constraint5_2, (lhsSum == rhsSum)];
+        constraint5 = [constraint5, (lhsSum == rhsSum)];
         % 0 out sums for next constraint
         lhsSum = 0;
         rhsSum = 0;
-        %constraint5 = [constraint5, lhsSum(1,j,k) == 1];
-    end
-    
-      
+    end  
 end
+% constraint5 = [];
 
-
-% Subtour elimination constraint (SEC)
-%xS = sum(x,3); % p*x(i,j) becomes p*sum(x,3)? Should make a matrix of
-% numOfCities by numOfCities, where each entry is the sum of all of the
-% binvars for each salesman at each curve length.
-
-% Wait: xS = sum(x,3) won't work because we won't be able to rule out
-% situations where i == j.
+% Constraint 6: subtour elimination constraints (SECs)
 xS = 0;
-
-constraint6_2 = [];
+constraint6 = [];
 for j = 2:numOfCities
-    
-    for i = 2:numOfCities
-        
+    for i = 2:numOfCities 
         for k = 1:numOfRobots
-            xS = xS + x2(i,j,k);
-
+            xS = xS + x(i,j,k);
             if i ~= j
-%             constraint5 = [constraint5, u(i)-u(j) + p*x(i,j) <= p -1];
-              constraint6_2 = [constraint6_2, (u(i)-u(j) + p*xS <= p -1)];
+              constraint6 = [constraint6, (u(i)-u(j) + p*xS <= p -1)];
             end
-            
             xS = 0; % reset to 0 for next iteration of constraint 
         end
-
     end
-    
 end
+constraint6 = [];
 
-constraint7_2 = [];
+% Ensure a robot can't visit itself. Remove when instituting lingering
+constraint7= [];
 for i = 1:numOfRobots
-    constraint7_2 = [constraint7_2, trace(x2(:,:,i)) == 0];
+    constraint7 = [constraint7, trace(x(:,:,i)) == 0];
 end
 
 
-% Complete constraints
-constraints_2 = [constraint1_2, constraint2_2, constraint3_2, ...
-                 constraint4_2, constraint5_2, ...
-                 constraint6_2, constraint7_2];
+% Ensure the number of node traversals for each city is
+% at least equal to one:
+
+% Changed so the node traversals are for each robot instead of total:
+% We use sum so the number of node traversals is at least 1 for at least
+% one robot. I.e., you could have [1 0 0] [0 1 0] or [0 2 1] but NOT [0 0 0]
+constraint8 = [(sum(numNodeTraversals,2) >= 1), (numNodeTraversals(1,:) >= 1)];
+constraint8 = [(sum(numNodeTraversals,2) >= 1)];
+
+%% Dantzig-Fulkerson-Johnson Subtour Elminination Constraint
+
+% We want to outrule every possible subtour. For a 10-city system,
+% we'll have 2e10 constraints. Each constraint outrules a specific subtour.
+
+% First thing we need to do: get a set of all subsets of the set 
+% V\{1} = {1,2,3,...,numOfCities}\{1}. This set of all subsets of V is 
+% just the set of all subtours! We don't include 1 because, if we did,
+% then we'd have tours with 1 in them, making them NOT subtours by
+% definition.
+
+
+
+% Definition. A subtour is a tour that does not include the origin.
+
+% So first get all possible subtours:
+S = PowerSet(V);
+
+% Ensure the cardinality of the subsets lays between 2 and (numOfCities-1)
+% S = S(2:end-1);
+S = S(2:end);
+
+% bin represents whether a robot is inside or outside a subset. If bin = 1,
+% that means the robot is in the subset S{t}. Otherwise,
+% if bin = 0, the robot is not in the subset S{t} (can't have any tours
+% inside S). bin is per robot. 
+bin = binvar(numel(S),numOfRobots,'full');
+
+% Now implement the constraints:
+constraintSEC = [];
+xijkSum = 0;
+xijkSum2 = 0;
+xijkSum3 = 0;
+% For each robot
+for k = 1:numOfRobots
+    % For each subtour (each set in S)
+    for t = 1:numel(S)
+        % NOW we do our double sum
+        for i = 1:numel(S{t})
+            % We sum all j's that aren't in the set S:
+            for j = 1:numel(V0)
+                % for j NOT in S, 
+                if( sum((ismember(cell2mat(S{t}),j))) == 0 ) 
+                    xijkSum = xijkSum + x(S{t}{i},j,k); %exits (wrt S{t})
+                    xijkSum2 = xijkSum2 + x(j,S{t}{i},k); %entrances
+                % for j IN S, 
+                else
+                    % Counts the number of traversals inside the subtour
+                    % S{t}:
+                    xijkSum3 = xijkSum3 + x(S{t}{i},j,k);
+                end
+            end
+        end
+        % If the robot IS in the set, then bin(t,k) is 1, so the
+        % constraints with xijkSum3 are made. These constraints force the robot,
+        % when it's in the set, to enter at least once, exit at least once,
+        % and have a number of entrances and exits equal to each other.
+        constraintSEC = [constraintSEC, implies((bin(t,k)), ... 
+            [(xijkSum >=1), (xijkSum2 >= 1), (xijkSum == xijkSum2) ]) ];
+        % If the robot is NOT in the set, ensure that the number of
+        % traversals (measured by the number of times xijk = 1 for i,j in
+        % the set S) is equal to 0:
+        constraintSEC = [constraintSEC,implies(1-(bin(t,k)),xijkSum3==0)];
+        xijkSum = 0;
+        xijkSum2 = 0;
+        xijkSum3 = 0;
+        % Note where these constraints are in this series of loops.
+        % We want the constraints to be made for each robot
+        % and each subtour. 
+    end
+end
+
+
+% Note on summation in website: i not in S really means i in V0\S, where
+% V0 is the set of ALL nodes (including the dummy node)
+
+% The xijkSums don't have to hold for each k. Only has to hold for one k.
+% Reason: if we did it for each k, for each subset, we'd make the robots
+% obey the constraint for each subset, forcing the robots to visit all of
+% the cities, which results in them having the same tours because that one
+% tour is the shortest for a single robot.
+
+% Add another condition: if the robots don't visit the specific S{t}, then
+% the sum of the xijks in S{t} must be 0. Use an if-else statement here to
+% implement it. HOW DO WE KNOW IF THE ROBOTS VISITED THE NODES IN THAT
+% SUBTOUR BEFORE RUNNING THE SUM?
+
+
+% Couple notes after working on it:
+
+% We do just want x >= 1. That's cause we want tour retracing, and if 
+% we force every subtour to have at least 2 different connections, we could
+% lose tours where a robot marches out to a city and then takes the same
+% route back (hence just have one retracing).
+
+
+%% Final constraints and objectives
+
+% Constraint on x: must be greater than or equal to 0 (so we don't get 
+% negative integers) and less than some upper bound M
+M = 3;
+constraintx = [(x >= 0), (x <= M)];
+% So we're saying that we don't want the robots to visit a city more than
+% M (3) times for all cities.
+
+constraintDummyNode = [(x(1,1,1) == 0), (x(1,1,2) == 0), (x(1,1,3) == 0)];
+constraintDummyNode = [];
+
+% Complete constraints             
+constraints = [constraint1, constraint2, constraint3, constraint4, ...
+               constraint5, constraint6, constraint8, constraintx ...
+               constraintSEC, constraintDummyNode];
  
 % Objectives
 SalesmanDistances = [];
-for i = 1:numOfRobots
-    SalesmanDistances = [SalesmanDistances sum(sum(C.*x2(:,:,i)))];
+for k = 1:numOfRobots
+    SalesmanDistances = [SalesmanDistances ...
+                         sum(sum(C(1:end,1:end).*x(1:end,1:end,k)))];
+%     SalesmanDistances = [SalesmanDistances ...
+%                          sum(sum(C(1:end,1:end).*x(1:end,1:end,k)))];
 end
 
 
 objective1 = sum(SalesmanDistances); % Minimize total distance of all tours
 objective2 = max(SalesmanDistances); % Minimize max individual robot tour
-% This objective is confirmed to give us the same result as the 
-% first formulation. Absolutely massive.
+% Min weighted sum of max single robot tour and number of node revisits
+objective3 = max(SalesmanDistances) + 0.001*sum(sum(numNodeTraversals));
 
 
 %% Solve Original System
 
-if (flagIterative == 0)
+if (flagSolveOnce == 1)
 
     tic 
-    options = sdpsettings('verbose',0,'solver','Gurobi');
-    sol = optimize(constraints_2,objective2,options);
-    value(objective2)
-    value(x2)
+    options = sdpsettings('verbose',1,'solver','Gurobi');
+    sol = optimize(constraints,objective3,options);
+    value(objective3)
+    value(x)
     toc
 
-    [RobotDistances, RobotRowIdxs, RobotColIdxs] = ...
-        getAllRobotTourInfo(C, numOfCities, numOfRobots, value(x2));
+%     [RobotDistances, RobotRowIdxs, RobotColIdxs] = ...
+%         getAllRobotTourInfo(C, numOfCities, numOfRobots, value(x2));
 end
 
+%% New Retraced Naive Method
+
+if (flagIterativeNew == 1)
+    totTime = 0;
+    tic
+    routeMatrix = []; 
+    flag = 0;
+    distanceMatrix = [];
+    while(1)
+        % run simulation
+        options = sdpsettings('verbose',1,'solver','Gurobi');
+        sol = optimize(constraints,objective3,options);
+        sol.problem;
+        
+        value(objective3);
+        value(x);
+
+        adjMatrices = value(x);
+
+        robot1Graph = Graph2(numOfCities);
+        robot2Graph = Graph2(numOfCities);
+        robot3Graph = Graph2(numOfCities);
+
+        robot1Graph.loadAdjacencyMatrix(adjMatrices(:,:,1));
+        robot2Graph.loadAdjacencyMatrix(adjMatrices(:,:,2));
+        robot3Graph.loadAdjacencyMatrix(adjMatrices(:,:,3));
+
+        robot1Graph.printAllPaths(1,1);
+        robot2Graph.printAllPaths(1,1);
+        robot3Graph.printAllPaths(1,1);
+
+        robot1Paths = robot1Graph.m_visitedRoutes;
+        robot2Paths = robot2Graph.m_visitedRoutes;
+        robot3Paths = robot3Graph.m_visitedRoutes;
+
+        temp1 = robot1Paths;
+        for i = 1:numel(robot1Paths)
+        robot1Paths{i} = cell2mat(temp1{i});
+        end
+        robot1Paths = robot1Paths';
+        [~,yolo] = sort(cellfun(@length,robot1Paths));
+        robot1Paths = robot1Paths(yolo);
+
+        temp2 = robot2Paths;
+        for i = 1:numel(robot2Paths)
+        robot2Paths{i} = cell2mat(temp2{i});
+        end
+        robot2Paths = robot2Paths';
+        [~,yolo] = sort(cellfun(@length,robot2Paths));
+        robot2Paths = robot2Paths(yolo);
+
+        temp3 = robot3Paths;
+        for i = 1:numel(robot3Paths)
+        robot3Paths{i} = cell2mat(temp3{i});
+        end
+        robot3Paths = robot3Paths';
+        [~,yolo] = sort(cellfun(@length,robot3Paths));
+        robot3Paths = robot3Paths(yolo);
+
+        for i = 1:numel(robot1Paths)
+            if flag == 1
+                break
+            end
+            for j = 1:numel(robot2Paths)
+                if flag == 1
+                    break
+                end
+                for k = 1:numel(robot3Paths)
+                if flag == 1
+                    break
+                end
+
+                    % Attempt to concatenate the paths from each robot into a 
+                    % matrix. If that doesn't work, skip to the next iteration:
+                    try
+                        routeMatrix = [robot1Paths{i}; robot2Paths{j}; ...
+                                       robot3Paths{k}];
+                    catch
+%                         disp('Tour lengths mismatch. skipping this iteration...')
+                        continue
+                    end
+
+                    % Now, begin checks that every city has been visited in this
+                    % chosen set of tours:
+
+                    % ASSERT that the number unique elements among the set is not
+                    % greater than the number of cities (impossible)
+                    assert(numel(unique(routeMatrix)) <= numOfCities, ...
+                        'routeMatrix has more unique elements (cities) than' ...
+                        ,'the number of unique cities (impossible).')
+
+                    % If the number of unique cities visited is less than the 
+                    % total number of cities, then we didn't visit every city, so
+                    % skip this iteration.
+                    if(numel(unique(routeMatrix)) < numOfCities)
+                        continue
+                    end
+
+                    % Now, assemble a matrix of distances between the robots'
+                    % tours:
+                    distanceMatrix = getOnlyDistances(routeMatrix,C);
+
+                    % Finally, check the inter-city distances. If every
+                    % inter-robot distance, for all simulation steps, is
+                    % less than the tether length, assign the flag to 1,
+                    % allowing us to break out of the nested for loops and
+                    % end the algorithm:
+                    
+                    
+                    if ( sum(sum(distanceMatrix([1,2],:) > tetherLength)) == 0 || ...
+                        sum(sum(distanceMatrix([1,3],:) > tetherLength)) == 0 || ...
+                        sum(sum(distanceMatrix([2,3],:) > tetherLength)) == 0)
+                    
+                        flag = 1;
+                    
+                    end
+                    
+%                     if( sum(sum(distanceMatrix <= tetherLength)) ==  ...
+%                                                     numel(distanceMatrix))
+%                         flag = 1;
+%                     end
+                    % Otherwise, continue iterating. If we get to the end
+                    % of the set of iterations and still don't have a
+                    % solution that works, we'll have to rerun the sim. The
+                    % command to rerun the sim is based on the flag, and it
+                    % happens outside of these iterations.
+                    if (flag == 1)
+                        disp('bingo boingo')
+                    end
+
+                end
+            end
+        end
+        
+        % If the flag is 0, it means no solution worked from the previous
+        % set, so update the constraints and rerun:
+        if (flag == 0)
+            for ii = 1:numOfRobots
+                constraints = [constraints, ...
+                               (x(:,:,ii) ~= value(x(:,:,ii))) ];
+            end
+        % Otherwise, we found a solution that works, so break out and
+        % end.
+        else
+            break
+        end
+        
+        
+    end
+    totTime = toc
+end
 
 %% Adding Tether Constraints Iteratively-- Getting the New System
 
@@ -288,13 +619,12 @@ pastAnswers = 0;
 % while( sum(sum(RobotDistances(1:2,:) > tetherLength)) ~= 0 ) 
 
 
-
+totTime = 0;
 tic % to see how long the sim takes
 while(1)
 
     % run simulation
-    % Set 'verbose' to 0 when timing the sim
-    options = sdpsettings('verbose',1,'solver','Gurobi');
+    options = sdpsettings('verbose',0,'solver','Gurobi');
     sol = optimize(constraints_2,objective2,options);
     sol.problem;
     value(objective2);
@@ -352,26 +682,15 @@ while(1)
                 % tours
                 [RobotDistancesTwo] = ...
                 getOnlyDistances(newColIdxs,C);
-            
-                if(flagNorm == "two-squared")
-                    % Or what we could do is just say, "if this solution
-                    % satisfies the tether constraint, keep it and you're 
-                    % done." Like this:
-                    if ( sum(sum(RobotDistancesTwo(1:2,:) > tetherLength^2)) == 0  ||...
-                        sum(sum(RobotDistancesTwo([1,3],:) > tetherLength^2)) == 0  ||...
-                        sum(sum(RobotDistancesTwo([2,3],:) > tetherLength^2)) == 0 )
-
-                        flag = 1;
-                    end 
-                end
                 
-                if(flagNorm == "two" || flagNorm == "one")
-                    if ( sum(sum(RobotDistancesTwo(1:2,:) > tetherLength)) == 0  ||...
-                        sum(sum(RobotDistancesTwo([1,3],:) > tetherLength)) == 0  ||...
-                        sum(sum(RobotDistancesTwo([2,3],:) > tetherLength)) == 0 )
-
-                        flag = 1;
-                    end 
+                % Or what we could do is just say, "if this solution
+                % satisfies the tether constraint, keep it and you're 
+                % done." Like this:
+                if ( sum(sum(RobotDistancesTwo(1:2,:) > tetherLength)) == 0  ||...
+                    sum(sum(RobotDistancesTwo([1,3],:) > tetherLength)) == 0  ||...
+                    sum(sum(RobotDistancesTwo([2,3],:) > tetherLength)) == 0 )
+                
+                    flag = 1;
                 end
                 
                 % if the solution doesn't violate the constraint, break
@@ -410,20 +729,9 @@ while(1)
         % length, exclude that specific solution and rerun.
         
     if flag == 0
-        
-        % solution binvar sometimes is cast into an sdpvar somehow. In
-        % that case, exclude the value with the second method shown in the
-        % catch block:
-        try 
-            for k = 1:numOfRobots
-                 constraints_2 = [constraints_2, exclude(x2(:,:,k), ...
-                 value(x2(:,:,k)))];
-            end
-        catch
-            for ii = 1:numOfRobots
-                constraints_2 = [constraints_2, ...
-                               (x2(:,:,ii) ~= value(x2(:,:,ii))) ];
-            end
+        for k = 1:numOfRobots
+             constraints_2 = [constraints_2, exclude(x2(:,:,k), ...
+             value(x2(:,:,k)))];
         end
         
     else
@@ -451,7 +759,7 @@ end
 % there. Then, you need to include the three nested for loops in this code
 % to check all the combinations.
 
-toc
+totTime = toc
 
 end
 
@@ -467,15 +775,31 @@ end
 % but the project will involve only a low number of robots anyway, so 
 % no problem.
 
+% Putting the routeMatrix in terms of robotRowIdxs and colIdxs to make
+% plotting work
+
+routeMatrix = [1 1 5 6 6 1; 1 7 2 4 3 1; 1 1 9 10 8 1];
+
+
+
+RobotRowIdxs = [];
+RobotColIdxs = [];
+
+RobotRowIdxs(:,:,1) = routeMatrix(1,1:end-1);
+RobotColIdxs(:,:,1) = routeMatrix(1,2:end);
+
+RobotRowIdxs(:,:,2) = routeMatrix(2,1:end-1);
+RobotColIdxs(:,:,2) = routeMatrix(2,2:end);
+
+RobotRowIdxs(:,:,3) = routeMatrix(3,1:end-1);
+RobotColIdxs(:,:,3) = routeMatrix(3,2:end);
+
 figure(1)
 box on
-plotRoute(nodecoords, RobotRowIdxs(1,:,1) , RobotColIdxs(1,:,1), ...
-    'red', flagNorm, flagTether)
+plotRoute(nodecoords, RobotRowIdxs(1,:,1) , RobotColIdxs(1,:,1), 'red')
 hold on
-plotRoute(nodecoords, RobotRowIdxs(1,:,2) , RobotColIdxs(1,:,2), ...
-    'magenta', flagNorm, flagTether)
-plotRoute(nodecoords, RobotRowIdxs(1,:,3) , RobotColIdxs(1,:,3), ...
-    'blue', flagNorm, flagTether)
+plotRoute(nodecoords, RobotRowIdxs(1,:,2) , RobotColIdxs(1,:,2), 'magenta')
+plotRoute(nodecoords, RobotRowIdxs(1,:,3) , RobotColIdxs(1,:,3), 'blue')
 
 % 1,2,3 specifcy the two robots with which you want the tethers drawn
 if (flagTether == 1)
@@ -493,24 +817,59 @@ if (flagTether == 1)
     
 end
 
-
-% Set text and axes to LaTeX-interpreted characters, and assign current,
-% and save plot onto computer:
-set(0,'defaulttextinterpreter','latex');
-
-axes = gca;
-
-axes.XAxis.TickLabelInterpreter = 'latex';
-axes.XAxis.TickLabelFormat  = '\\textbf{%g}';
-
-axes.YAxis.TickLabelInterpreter = 'latex';
-axes.YAxis.TickLabelFormat = '\\textbf{%g}';
-
-% exportgraphics(gca, ...
-%     '/home/walter/Desktop/ThesisFigures/Naive/Tether70/naive_unteth_2.jpg', 'Resolution', '1000')
-
+% 
+% % Set text and axes to LaTeX-interpreted characters, and assign current,
+% % and save plot onto computer:
+% set(0,'defaulttextinterpreter','latex');
+% 
+% axes = gca;
+% 
+% axes.XAxis.TickLabelInterpreter = 'latex';
+% axes.XAxis.TickLabelFormat  = '\\textbf{%g}';
+% 
+% axes.YAxis.TickLabelInterpreter = 'latex';
+% axes.YAxis.TickLabelFormat = '\\textbf{%g}';
+% 
+% % Save the plot onto your computer:
+% ax = gca;
+% exportgraphics(ax, ...
+%     '/home/walter/Desktop/ThesisFigures/NaiveBacktracking/Tether70/10CityNaiveBack2Norm.jpg', 'Resolution', '1000')
+% 
+% 
+% 
 
 %% Utility Functions
+
+% FIND A SUBTOUR IN A CELLARRAY
+% Inputs: set of sets (power set), desired tour
+% Outputs: index of desired tour in power set
+function [idx] = findSubtourInArray(powerSet, tour)
+    idx = 0;
+    for i = 1:numel(powerSet)
+        if sum(ismember(cell2mat(powerSet{i}), tour)) == numel(tour) ...
+                && numel(powerSet{i}) == numel(tour)
+            idx = i;
+        end
+    end
+end
+
+% By Paulo Abelha
+% Returns the powerset of set S
+% S is a cell array
+% P is a cell array of cell arrays
+function [ P ] = PowerSet( S )
+    n = numel(S);
+    x = 1:n;
+    P = cell(1,2^n);
+    p_ix = 2;
+    for nn = 1:n
+        a = combnk(x,nn);
+        for j=1:size(a,1)
+            P{p_ix} = S(a(j,:));
+            p_ix = p_ix + 1;
+        end
+    end
+end
 
 
 % DISTANCE FUNCTION
@@ -519,41 +878,71 @@ function [d] = distance(x1,y1,x2,y2)
     d = sqrt( (y2 - y1)^2 + (x2 - x1)^2 );
 end
 
+
 % Finds the 1-norm between two points
 function [d1] = distance1(x1,y1,x2,y2)
     d1 = abs(x2 - x1) + abs(y2 - y1);
 end
 
+
 % GET ONLY ROBOT DISTANCES
-function [RobotDistancesTwo] = getOnlyDistances(RobotColIdxs,C)
+% function [RobotDistancesTwo] = getOnlyDistances(RobotColIdxs,C)
+% 
+%     distanceTwoRobots = [];
+%     for i = 1:length(RobotColIdxs(1,:,1))
+%         distanceTwoRobots = [distanceTwoRobots, ...
+%             C(RobotColIdxs(1,i,1), RobotColIdxs(1,i,2))];
+%     end
+%     RobotDistancesTwo(1,:) = distanceTwoRobots;
+% %     display(RobotDistancesTwo);
+%     
+%     
+%     distanceTwoRobots = [];
+%     for i = 1:length(RobotColIdxs(1,:,1))
+%         distanceTwoRobots = [distanceTwoRobots, ...
+%             C(RobotColIdxs(1,i,1), RobotColIdxs(1,i,3))];
+%     end
+%     RobotDistancesTwo(2,:) = distanceTwoRobots;
+% %     display(RobotDistancesTwo);
+%     
+%     
+%     distanceTwoRobots = [];
+%     for i = 1:length(RobotColIdxs(1,:,2))
+%         distanceTwoRobots = [distanceTwoRobots, ...
+%             C(RobotColIdxs(1,i,2), RobotColIdxs(1,i,3))];
+%     end
+%     RobotDistancesTwo(3,:) = distanceTwoRobots;
+% %     display(RobotDistancesTwo);
+% 
+% end
 
-    distanceTwoRobots = [];
-    for i = 1:length(RobotColIdxs(1,:,1))
-        distanceTwoRobots = [distanceTwoRobots, ...
-            C(RobotColIdxs(1,i,1), RobotColIdxs(1,i,2))];
-    end
-    RobotDistancesTwo(1,:) = distanceTwoRobots;
-%     display(RobotDistancesTwo);
-    
-    
-    distanceTwoRobots = [];
-    for i = 1:length(RobotColIdxs(1,:,1))
-        distanceTwoRobots = [distanceTwoRobots, ...
-            C(RobotColIdxs(1,i,1), RobotColIdxs(1,i,3))];
-    end
-    RobotDistancesTwo(2,:) = distanceTwoRobots;
-%     display(RobotDistancesTwo);
-    
-    
-    distanceTwoRobots = [];
-    for i = 1:length(RobotColIdxs(1,:,2))
-        distanceTwoRobots = [distanceTwoRobots, ...
-            C(RobotColIdxs(1,i,2), RobotColIdxs(1,i,3))];
-    end
-    RobotDistancesTwo(3,:) = distanceTwoRobots;
-%     display(RobotDistancesTwo);
+% Updated version for updated Iterative Method:
+function [distanceMatrix] = getOnlyDistances(routeMatrix, C)
 
+    distanceR1R2 = [];
+    for i = 1:length(routeMatrix(1,:))
+        distanceR1R2 = [distanceR1R2, ...
+            C(routeMatrix(1,i), routeMatrix(2,i))];
+    end
+    
+    distanceR2R3 = [];
+    for i = 1:length(routeMatrix(2,:))
+        distanceR2R3 = [distanceR2R3, ...
+            C(routeMatrix(2,i), routeMatrix(3,i))];
+    end
+    
+    distanceR1R3 = [];
+    for i = 1:length(routeMatrix(3,:))
+        distanceR1R3 = [distanceR1R3, ...
+            C(routeMatrix(1,i), routeMatrix(3,i))];
+    end
+    
+    distanceMatrix = [distanceR1R2; distanceR2R3; distanceR1R3];
+
+    
 end
+
+
 
 % GET ALL TOUR COMBINATIONS
 function [finalTourOneCombos, finalTourTwoCombos, ...
@@ -874,8 +1263,7 @@ end
 % PLOTTING FUNCTION
 
 % nothing to return here
-function[] = plotRoute(nodecoords, rowIndex, colIndex, color, ...
-    flagTether, flagNorm) 
+function[] = plotRoute(nodecoords, rowIndex, colIndex, color) 
 
     % first plot just the node coordinates by themselves. Code influenced
     % by the "I want to create a plot using XY coordintes" post on 
@@ -911,20 +1299,19 @@ function[] = plotRoute(nodecoords, rowIndex, colIndex, color, ...
         drawnow
     end
     
-%     title("Robot Tours: Naive Method, Untethered, 1-norm");
-%     title("Robot Tours: Naive Method, " + ...
-%     num2str(flagTether) + ", " + num2str(flagNorm));
+%     title("Robot Tours: 60 Unit Tether, MinMax Objective");
+%     title("Robot Tours: mTSP Formulation, Tethered, 2-norm Squared");
 %     xlabel("x distance (arbitrary units)");
 %     ylabel("y distance (arbitrary units)");
+
     xlabel("\textbf{$$\mathbf{x}$$ distance (arbitrary units)}", ...
         'fontweight','bold','FontSize',16);
     ylabel("\textbf{$$\mathbf{y}$$ distance (arbitrary units)}",'fontweight', ...
         'bold','FontSize',16);
-    
+
     delta = 5;
     xlim([min(nodecoords(:,2))-delta,max(nodecoords(:,2))+delta])
     ylim([min(nodecoords(:,3))-delta/3,max(nodecoords(:,3))+delta/3])
-
 
 end
 
@@ -967,5 +1354,3 @@ function [] = plotTethers(nodecoords, RobotRowIdxs,RobotColIdxs, ...
 
     end
 end
-
-
