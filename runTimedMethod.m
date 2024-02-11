@@ -1,11 +1,11 @@
 function [soln, robotDistances, totTime, objectiveMinMax, flagIsFeasible] = ...
     runTimedMethod(nodecoords,numOfCities, ...
-    numOfRobots, numOfTimeSteps, flagTether,tetherLength,flagNorm)
+    numOfRobots, numOfTimeSteps, flagTether,tetherLength,flagNorm, timeLimit)
 
 
 clc; 
 clearvars -except nodecoords numOfCities numOfRobots numOfTimeSteps ...
-    flagTether tetherLength flagNorm;
+    flagTether tetherLength flagNorm timeLimit;
 close all;
 yalmip('clear');
 
@@ -18,7 +18,7 @@ yalmip('clear');
 % 3. Change the objective function
 
 
-% flagNorm = "2-norm"; % options: "1-norm", "2-norm Squared", "2-norm"
+% flagNorm = "2_norm"; % options: "1_norm", "2_norm Squared", "2_norm"
 % flagTether = "Tethered"; % options: "Tethered" or "Untethered"
 
 
@@ -52,13 +52,13 @@ C = zeros(numOfCities);
 for i = 1:numOfCities
     for j = 1:numOfCities   
         
-        if( (strcmp(flagNorm,"1-norm") == 1) )
+        if( (strcmp(flagNorm,"1_norm") == 1) )
             C(i,j) = distance1(nodecoords(i,2), nodecoords(i,3), ...
             nodecoords(j,2), nodecoords(j,3));
         end
         
-        if ( (strcmp(flagNorm,"2-norm Squared") == 1) || ...
-                (strcmp(flagNorm,"2-norm") == 1) )
+        if ( (strcmp(flagNorm,"2_norm Squared") == 1) || ...
+                (strcmp(flagNorm,"2_norm") == 1) )
              C(i,j) = distance(nodecoords(i,2), nodecoords(i,3), ...
              nodecoords(j,2), nodecoords(j,3));
         end
@@ -149,7 +149,7 @@ robotDistTraveled = []; % for objective function
 
 % I think we'll need to split this into separate loops.
 % Loop 1: get all robot locations
-% Loop 2: 1 and 2-norm implementations of tether constraints
+% Loop 2: 1 and 2_norm implementations of tether constraints
 
 
 
@@ -193,19 +193,19 @@ end
 for k=2:numOfRobots
     for i = 1:numOfTimeSteps
                 
-        if (strcmp(flagNorm,"1-norm") == 1)  
+        if (strcmp(flagNorm,"1_norm") == 1)  
             temp = [temp; ...
                     norm( (robotLocation{k-1}(i,:)-robotLocation{k}(i,:)),1) ];
 %                     sum(abs(robotLocation{k-1}(i,:)-robotLocation{k}(i,:)))];
         end
         
-        if (strcmp(flagNorm,"2-norm Squared") == 1)
+        if (strcmp(flagNorm,"2_norm Squared") == 1)
             temp = [temp; ...
             (norm( (robotLocation{k-1}(i,:)-robotLocation{k}(i,:)),2))^2 ];
 %             sum((robotLocation{k-1}(i,:)-robotLocation{k}(i,:)).^2)]; 
         end
         
-        if (strcmp(flagNorm,"2-norm") == 1)
+        if (strcmp(flagNorm,"2_norm") == 1)
             temp = [temp; ...
                     norm( (robotLocation{k-1}(i,:)-robotLocation{k}(i,:)),2) ];
 %                               sqrt(sum((robotLocation{k-1}(i,:)-robotLocation{k}(i,:)).^2)) ];
@@ -224,20 +224,20 @@ for k = 1:numOfRobots
     for i = 2:numOfTimeSteps
         
         % one-norm implementation
-        if (strcmp(flagNorm,"1-norm") == 1) 
+        if (strcmp(flagNorm,"1_norm") == 1) 
             temp = temp + ...
             sum(abs(robotLocation{k}(i-1,:)-robotLocation{k}(i,:)));
 %             norm( (robotLocation{k}(i-1,:)-robotLocation{k}(i,:)),1 );
         end
         
         % squared two-norm implementation
-        if (strcmp(flagNorm,"2-norm Squared") == 1)
+        if (strcmp(flagNorm,"2_norm Squared") == 1)
             temp = temp + ...
             sum((robotLocation{k}(i-1,:)-robotLocation{k}(i,:)).^2);            
         end
         
         % squared two-norm implementation
-        if (strcmp(flagNorm,"2-norm") == 1)
+        if (strcmp(flagNorm,"2_norm") == 1)
             temp = temp + ...
                               norm( (robotLocation{k}(i-1,:)-robotLocation{k}(i,:)),2 );
 %                               sqrt(sum((robotLocation{k}(i-1,:)-robotLocation{k}(i,:)).^2));
@@ -257,12 +257,12 @@ end
 for i = 1:numOfTimeSteps
     for j = 1:(numOfRobots-1)
         
-        if (strcmp(flagNorm,"1-norm") == 1 || strcmp(flagNorm,"2-norm") == 1)
+        if (strcmp(flagNorm,"1_norm") == 1 || strcmp(flagNorm,"2_norm") == 1)
             tetherConstraints = [tetherConstraints, ...
             (robotDistances(i,j) <= tetherLength)];     
         end
         
-        if (strcmp(flagNorm,"2-norm Squared") == 1)      
+        if (strcmp(flagNorm,"2_norm Squared") == 1)      
             tetherConstraints = [tetherConstraints, ...
             (robotDistances(i,j) <= tetherLength^2)];
         end
@@ -295,6 +295,10 @@ objectiveMinMax = max(robotDistTraveled);
 constraints = [constraint1, constraint2, constraint3, constraint4, ...
 ];
 
+% Set time limit from function argument:
+opts = sdpsettings;
+opts.gurobi.TimeLimit = timeLimit;
+
 if strcmp(flagTether,"Tethered") == 1
     constraints = [constraints, tetherConstraints];
 end
@@ -303,13 +307,20 @@ end
 % options = sdpsettings('verbose',1,'solver','Gurobi');
 tic;
 try
-    sol = optimize(constraints,objectiveMinMax);
+    sol = optimize(constraints,objectiveMinMax, opts);
 catch
     disp("The problem is infeasible");
     flagIsFeasible = 0;
 end
 sol.info;
 totTime = toc;
+if (toc >= timeLimit)
+    totTime = timeLimit;
+    disp("Simulation exceeded time limit of " + num2str(timeLimit) + ...
+        " s. returning feasible, but not necessarily optimal, solution")
+else
+    totTime = toc;
+end
 
 % get total distance traveled by all robots:
 totalDistanceSum = 0;
@@ -410,7 +421,7 @@ function [d] = distance(x1,y1,x2,y2)
     d = sqrt( (y2 - y1)^2 + (x2 - x1)^2 );
 end
 
-% Finds the 1-norm between two points
+% Finds the 1_norm between two points
 function [d1] = distance1(x1,y1,x2,y2)
     d1 = abs(x2 - x1) + abs(y2 - y1);
 end

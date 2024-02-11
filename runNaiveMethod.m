@@ -48,7 +48,7 @@ flagSolveBaseProblem = 0;
 % Note that if you turn on flagIterative, you should probably turn on
 % flagTether, as the Iterative Method is the version of the sim that
 % implements the tether constraints.
-% flagNorm = "2-norm"; % options: "2-norm", "1-norm"
+% flagNorm = "2_norm"; % options: "2_norm", "1_norm"
 
 numOfRobots = 3;
 % numOfCities = 5; %
@@ -90,12 +90,12 @@ C = zeros(numOfCities);
 for i = 1:numOfCities
     for j = 1:numOfCities   
         
-        if( (strcmp(flagNorm,"1-norm") == 1) )
+        if( (strcmp(flagNorm,"1_norm") == 1) )
             C(i,j) = distance1(nodecoords(i,2), nodecoords(i,3), ...
             nodecoords(j,2), nodecoords(j,3));
         end
         
-        if ( (strcmp(flagNorm,"2-norm") == 1) )
+        if ( (strcmp(flagNorm,"2_norm") == 1) )
              C(i,j) = distance(nodecoords(i,2), nodecoords(i,3), ...
              nodecoords(j,2), nodecoords(j,3));
         end
@@ -1351,7 +1351,7 @@ function [d] = distance(x1,y1,x2,y2)
 end
 
 
-% Finds the 1-norm between two points
+% Finds the 1_norm between two points
 function [d1] = distance1(x1,y1,x2,y2)
     d1 = abs(x2 - x1) + abs(y2 - y1);
 end
@@ -1772,7 +1772,7 @@ function[] = plotRoute(nodecoords, rowIndex, colIndex, color)
     end
     
 %     title("Robot Tours: 60 Unit Tether, MinMax Objective");
-%     title("Robot Tours: mTSP Formulation, Tethered, 2-norm Squared");
+%     title("Robot Tours: mTSP Formulation, Tethered, 2_norm Squared");
 %     xlabel("x distance (arbitrary units)");
 %     ylabel("y distance (arbitrary units)");
     
