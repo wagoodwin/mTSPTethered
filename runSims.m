@@ -1,18 +1,21 @@
 %% Setup
 clearvars
+% PARAMETERS ---------------------------------
+numOfCities = 10;
+tetherLength = 70;
 numRuns = 25;
-numOfRobots = 3;
+flagNorm = "1_norm";
+% -----------------------------------------------------
 numOfTimeSteps = 8;
 flagTether = "Tethered"; % options: "Tethered" or "Untethered"
-tetherLength = 70;
-flagNorm = "1_norm";   % options: "1_norm", "2_norm"
-flagIterativeNew = 1;    % for Naive Method
+flagIterativeNew = 1;    % for Naive 
 
+
+numOfRobots = 3;
 % Default time limit for Naive Method before truncation using a 'smarter'
 % version near Naive Method function call
 timeLimitTimedMethod = 1800; % in seconds
 
-numOfCities = 10;
 % Generate node coordinates
 % From a file:
 % We use these node coordinates for a few sets of runs. Most runs are with
@@ -45,11 +48,11 @@ sz = [numOfCities 2];
 
 % Universal path where all data will go
 path = "C:\Users\alexg\OneDrive\Documents\MATLAB" + ...
-        "\Repositories\mTSPTethered\allRunInfo\";
+        "\Repositories\mTSPTethered\allRunInfo2\";
     
 % Make directory based on setup information:
 mkdir(path + ...
-sprintf("TSPCOORDS_Cities%d_Tether%d_Runs%d_%s",numOfCities, tetherLength, + ...
+sprintf("Cities%d_Tether%d_Runs%d_%s",numOfCities, tetherLength, + ...
 numRuns, flagNorm) + "\" )
 
 %% test runs
@@ -156,108 +159,108 @@ numRuns, flagNorm) + "\" )
 
 %% Run Loop, Timed
 
-
-allRunInfo = cell(1,numRuns);
-
-for j = 1:numRuns
-    
-    % Initialize a constant seed. The 'seed' determines how the computer will
-    % generate random numbers. By setting the seed constant here, we will get
-    % the same "random" numbers each run. We're doing this maneuver to keep
-    % some consistency for testing.
-    rng(j,'twister');
-    % So note that we use seeds 1 through 10. That gives us 10 different
-    % sets of random coordinates that we can individually replicate using
-    % the corresponding seed.
-    
-    randomCoords = ...
-    [(1:1:numOfCities)', round(unifrnd(0,intervalLength, sz))];
-    coords = randomCoords;
-    coords = nodecoords;
-    % unifrnd() samples numbers from a uniform distribution
-    % round() sets every number to its respective nearest integer
-    
-    [soln, robotDistances, totTime, objectiveMinMax, flagIsFeasible] = ...
-        runTimedMethod(coords,numOfCities, ...
-        numOfRobots, numOfTimeSteps, flagTether,tetherLength,flagNorm,timeLimitTimedMethod);
-
-    % We store the solution, agent distances, objective function value, given
-    % coordinates, tether length, and norm type for each run. To distinguish
-    % between runs, we put all of this information, for each run, in its own
-    % cell array. So for n runs, we have n cell arrays, and each cell array has
-    % all that information.
-
-    % To store all of these cell arrays, we put them in a larger cell array.
-
-    valSol            = value(soln);
-    valRobotDistances = value(robotDistances);
-    valObj            = value(objectiveMinMax);
-
-    runTitles = {'valSol', 'valRobotDistances', 'valObj', 'coords', ...
-        'tetherLength', 'flagNorm', 'numOfTimeSteps', 'flagIsFeasible', 'totTime'};
-
-    runData = {valSol, valRobotDistances, valObj, coords, ...
-        tetherLength, flagNorm, numOfTimeSteps, flagIsFeasible, totTime};
-    
-    runInfo = cell(2,numel(runTitles));
-    
-    % Assigning titles and and respective data for that run
-    for i = 1:numel(runTitles)
-        runInfo{1,i} = runTitles{i}; runInfo{2,i} = runData{i};
-    end
-    
-    % Put all the information for this single run into a slot for all of
-    % the run information
-    allRunInfo{j} = runInfo;
-
-    %save("/home/walter/Repositories/mTSPAlgorithms/MTSPTethered/mTSPTethered/randomRunsTimed70.mat", ...
-        %"allRunInfo")
-
-    fullpath = path + sprintf("TSPCOORDS_Cities%d_Tether%d_Runs%d_%s",numOfCities, + ...
-        tetherLength, numRuns, flagNorm) + "\";
-
-    save(fullpath + sprintf("randomRunsTimed%d.mat",tetherLength), "allRunInfo")
-
-%     % Save figure for that run as well:
-%     folderName = '/home/walter/Repositories/mTSPAlgorithms/MTSPTethered/mTSPTethered/randomRuns';
-%     figName = sprintf('Run%d.jpg',j);
-%     fullFileName = fullfile(folderName,figName);
-%     exportgraphics(axes, fullFileName, 'Resolution', '1000');
-%     Not doing plotting because it's gonna take a while to make work and
-%     I'm lazy. But if we need plots, I can make them with the output data.
-
-
-end
-
-
-% Statistics
-
-% We want means, medians, stdevs, mins, and maxes for objective values and
-% computation times.
-
-objValsData   = zeros(1,numel(runTitles));
-compTimesData = zeros(1,numel(runTitles));
-
-for i = 1:numRuns
-    objValsData(i)    = allRunInfo{i}{2,3};
-    compTimesData(i)  = allRunInfo{i}{2,9};
-end
-
-objVals.mean   = mean(objValsData);
-objVals.median = median(objValsData);
-objVals.stdev  = std(objValsData);
-objVals.min    = min(objValsData);
-objVals.max    = max(objValsData);
-
-compTimes.mean   = mean(compTimesData);
-compTimes.median = median(compTimesData);
-compTimes.stdev  = std(compTimesData);
-compTimes.min    = min(compTimesData);
-compTimes.max    = max(compTimesData);
-
-% And finally, save these computation times in a .mat file:
-save(fullpath + "objValsTimed.mat", "objVals");
-save(fullpath + "compTimesTimed.mat", "compTimes");
+% 
+% allRunInfo = cell(1,numRuns);
+% 
+% for j = 1:numRuns
+%     
+%     % Initialize a constant seed. The 'seed' determines how the computer will
+%     % generate random numbers. By setting the seed constant here, we will get
+%     % the same "random" numbers each run. We're doing this maneuver to keep
+%     % some consistency for testing.
+%     rng(j,'twister');
+%     % So note that we use seeds 1 through 10. That gives us 10 different
+%     % sets of random coordinates that we can individually replicate using
+%     % the corresponding seed.
+%     
+%     randomCoords = ...
+%     [(1:1:numOfCities)', round(unifrnd(0,intervalLength, sz))];
+%     coords = randomCoords;
+%     coords = nodecoords;
+%     % unifrnd() samples numbers from a uniform distribution
+%     % round() sets every number to its respective nearest integer
+%     
+%     [soln, robotDistances, totTime, objectiveMinMax, flagIsFeasible] = ...
+%         runTimedMethod(coords,numOfCities, ...
+%         numOfRobots, numOfTimeSteps, flagTether,tetherLength,flagNorm,timeLimitTimedMethod);
+% 
+%     % We store the solution, agent distances, objective function value, given
+%     % coordinates, tether length, and norm type for each run. To distinguish
+%     % between runs, we put all of this information, for each run, in its own
+%     % cell array. So for n runs, we have n cell arrays, and each cell array has
+%     % all that information.
+% 
+%     % To store all of these cell arrays, we put them in a larger cell array.
+% 
+%     valSol            = value(soln);
+%     valRobotDistances = value(robotDistances);
+%     valObj            = value(objectiveMinMax);
+% 
+%     runTitles = {'valSol', 'valRobotDistances', 'valObj', 'coords', ...
+%         'tetherLength', 'flagNorm', 'numOfTimeSteps', 'flagIsFeasible', 'totTime'};
+% 
+%     runData = {valSol, valRobotDistances, valObj, coords, ...
+%         tetherLength, flagNorm, numOfTimeSteps, flagIsFeasible, totTime};
+%     
+%     runInfo = cell(2,numel(runTitles));
+%     
+%     % Assigning titles and and respective data for that run
+%     for i = 1:numel(runTitles)
+%         runInfo{1,i} = runTitles{i}; runInfo{2,i} = runData{i};
+%     end
+%     
+%     % Put all the information for this single run into a slot for all of
+%     % the run information
+%     allRunInfo{j} = runInfo;
+% 
+%     %save("/home/walter/Repositories/mTSPAlgorithms/MTSPTethered/mTSPTethered/randomRunsTimed70.mat", ...
+%         %"allRunInfo")
+% 
+%     fullpath = path + sprintf("TSPCOORDS_Cities%d_Tether%d_Runs%d_%s",numOfCities, + ...
+%         tetherLength, numRuns, flagNorm) + "\";
+% 
+%     save(fullpath + sprintf("randomRunsTimed%d.mat",tetherLength), "allRunInfo")
+% 
+% %     % Save figure for that run as well:
+% %     folderName = '/home/walter/Repositories/mTSPAlgorithms/MTSPTethered/mTSPTethered/randomRuns';
+% %     figName = sprintf('Run%d.jpg',j);
+% %     fullFileName = fullfile(folderName,figName);
+% %     exportgraphics(axes, fullFileName, 'Resolution', '1000');
+% %     Not doing plotting because it's gonna take a while to make work and
+% %     I'm lazy. But if we need plots, I can make them with the output data.
+% 
+% 
+% end
+% 
+% 
+% % Statistics
+% 
+% % We want means, medians, stdevs, mins, and maxes for objective values and
+% % computation times.
+% 
+% objValsData   = zeros(1,numel(runTitles));
+% compTimesData = zeros(1,numel(runTitles));
+% 
+% for i = 1:numRuns
+%     objValsData(i)    = allRunInfo{i}{2,3};
+%     compTimesData(i)  = allRunInfo{i}{2,9};
+% end
+% 
+% objVals.mean   = mean(objValsData);
+% objVals.median = median(objValsData);
+% objVals.stdev  = std(objValsData);
+% objVals.min    = min(objValsData);
+% objVals.max    = max(objValsData);
+% 
+% compTimes.mean   = mean(compTimesData);
+% compTimes.median = median(compTimesData);
+% compTimes.stdev  = std(compTimesData);
+% compTimes.min    = min(compTimesData);
+% compTimes.max    = max(compTimesData);
+% 
+% % And finally, save these computation times in a .mat file:
+% save(fullpath + "objValsTimed.mat", "objVals");
+% save(fullpath + "compTimesTimed.mat", "compTimes");
 
 %% Run Naive Method Loop
 
@@ -267,14 +270,19 @@ allRunInfoNaive = cell(1,numRuns);
 % If the timed method computation times are longer, then the assumption
 % that the timed method is quick is gone, so just set this time limit to be
 % the same:
-if (compTimes.median <= timeLimitTimedMethod)
-    timeLimit = compTimes.median*1.5;
-else
-    timeLimit = timedLimitTimedMethod;
-end
+% if (compTimes.median <= timeLimitTimedMethod)
+%     timeLimit = compTimes.median*1.5;
+% else
+%     timeLimit = timedLimitTimedMethod;
+% end
+% old shit, don't use above stuff
 
-for j = 1:numRuns 
-    
+timeLimit = timeLimitTimedMethod;
+
+for j = 1:21
+    clc
+    disp('iteration number: ')
+    disp(j)
     % Initialize a constant seed. The 'seed' determines how the computer will
     % generate random numbers. By setting the seed constant here, we will get
     % the same "random" numbers each run. We're doing this maneuver to keep
@@ -287,7 +295,7 @@ for j = 1:numRuns
     randomCoords = ...
     [(1:1:numOfCities)', round(unifrnd(0,intervalLength, sz))];
     coords = randomCoords;
-    coords = nodecoords;
+%     coords = nodecoords;
     % unifrnd() samples numbers from a uniform distribution
     % round() sets every number to its respective nearest integer
     
@@ -328,10 +336,10 @@ for j = 1:numRuns
 %         "allRunInfoNaive")
 
     
-    fullpath = path + sprintf("TSPCOORDS_Cities%d_Tether%d_Runs%d_%s",numOfCities, + ...
+    fullpath = path + sprintf("Cities%d_Tether%d_Runs%d_%s",numOfCities, + ...
         tetherLength, numRuns, flagNorm) + "\";
 
-    save(fullpath + sprintf("randomRunsNaive%d.mat",tetherLength), "allRunInfo")
+    save(fullpath + sprintf("randomRunsNaive%d.mat",tetherLength), "allRunInfoNaive")
     
 %     % Save figure for that run as well:
 %     folderName = '/home/walter/Repositories/mTSPAlgorithms/MTSPTethered/mTSPTethered/randomRuns';
@@ -372,7 +380,50 @@ compTimesNaive.max    = max(compTimesDataNaive);
 save(fullpath + "objValsNaive.mat", "objValsNaive");
 save(fullpath + "compTimesNaive.mat", "compTimesNaive");
 
-%%
+%% Send email
+clc
+
+host = 'smtp.gmail.com';
+mail = 'rundonegocheck@gmail.com';
+password = 'rundonegocheckPWEASE666';
+passcode = 'pfmx rogn udqm mxyu';
+
+
+
+setpref('Internet','E_mail','rundonegocheck@gmail.com');
+setpref('Internet','SMTP_Server','smtp.gmail.com');
+setpref('Internet','SMTP_Username',mail);
+setpref('Internet','SMTP_Password',passcode);
+
+% gmail server
+props = java.lang.System.getProperties;
+props.setProperty('mail.smtp.auth','true');
+props.setProperty('mail.smtp.socketFactory.class', 'javax.net.ssl.SSLSocketFactory');
+props.setProperty('mail.smtp.socketFactory.port', '465');
+props.setProperty('mail.smtp.starttls.enable','true');
+% 
+% server='smtp.gmail.com';
+% setpref('Internet','E_mail', mail);
+% setpref('Internet','SMTP_Server', server);
+% setpref('Internet','SMTP_Username', mail);
+% setpref('Internet','SMTP_Password', passcode);
+% props = java.lang.System.getProperties;
+% props.setProperty( 'mail.smtp.auth', 'true' );
+% props.setProperty( 'mail.smtp.user', mail );
+% props.setProperty( 'mail.smtp.password', passcode );
+% props.setProperty( 'mail.smtp.host', server );
+% props.setProperty( 'mail.smtp.port', '587' );
+% props.setProperty( 'mail.smtp.starttls.enable', 'true' );
+
+
+% sendmail('alexgoodwin789@gmail.com', 'run done');
+sendmail('zach@poit.io', 'run done');
+sendmail('poitzachary@gmail.com', 'run done');
+sendmail('alexgoodwin789@gmail.com', 'run done');
+% sendmail('garrisonsynnestvedt@gmail.com', 'poop');
+
+
+
 
 %% tether length unifrom sampling interval proof
 % 

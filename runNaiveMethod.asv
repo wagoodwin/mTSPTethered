@@ -29,7 +29,7 @@ To change between norms, just change the distance function in the
 
 % TO RUN: Press "Run" in the MATLAB editor
 
-% clc; 
+clc; 
 clearvars -except nodecoords numOfCities ...
     flagTether tetherLength flagNorm flagIterativeNew timeLimit;
 close all;
@@ -734,18 +734,7 @@ if (flagIterativeNew == 1)
             catch
                 disp("cannot add SECs")
             end
-            % But check running time here: if we've taken beyond our
-            % allowable time limit, end it here. Don't know if feasible.
-            if (toc > timeLimit)
-                disp('Global time limit reached.');
-                disp('Terminating and returning incomplete solution');
-                flagIsFeasible = 2;
-                totTime = toc;
-                soln = value(x);
-                objectiveMinMax = value(objective2);
-                robotDistances = distanceMatrix;
-                return
-            end   
+            
         end
         
     end
